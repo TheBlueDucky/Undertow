@@ -12,6 +12,8 @@
   --p2: #8b6fd4; --p2-ink: #150c2b;
   --hl: #4fd1c5; --kill: #ff5f6d; --danger: #ff5f6d;
   --shadow: rgba(0,0,0,.45);
+  /* barrier-strike ring: defined once, inherited by every theme below */
+  --warnring: #f0a832;
 }
 [data-theme="dusk"] {
   --bg: #1c1512; --bg2: #261d18; --bg3: #30251f;
@@ -163,8 +165,9 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
 
 .boardwrap { display: flex; justify-content: center; }
 .board {
-  --bs: min(78vh, 100%, 620px);
-  --cell: calc(var(--bs) / 7);
+  --bs: min(78vh, 100%, 680px);
+  --n: 11;
+  --cell: calc(var(--bs) / var(--n));
   position: relative; width: var(--bs); height: var(--bs);
   border-radius: 12px; overflow: hidden;
   box-shadow: 0 14px 40px var(--shadow);
@@ -207,6 +210,18 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
   border: 3px solid var(--kill);
   box-shadow: 0 0 14px color-mix(in srgb, var(--kill) 55%, transparent);
 }
+/* barrier placement target */
+.sq.place .hint::after {
+  content: ""; width: 62%; height: 62%; border-radius: 4px;
+  border: 2px dashed color-mix(in srgb, var(--hl) 75%, transparent);
+  background: color-mix(in srgb, var(--hl) 12%, transparent);
+}
+/* a barrier you can chip away at */
+.sq.strike .hint::after {
+  content: ""; width: 84%; height: 84%; border-radius: 5px;
+  border: 3px solid var(--warnring);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--warnring) 45%, transparent);
+}
 .board.clickable .sq { cursor: pointer; }
 
 .coord {
@@ -228,9 +243,38 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
   transition: transform var(--anim, .28s) ease-in, opacity var(--anim, .28s) ease-in;
   box-shadow: 0 3px 7px var(--shadow), inset 0 0 0 1px rgba(255,255,255,.13);
 }
-.pc.s0 .pc-in { background: var(--p1); color: var(--p1-ink); }
-.pc.s1 .pc-in { background: var(--p2); color: var(--p2-ink); }
+/* fallbacks only - seat colours are applied inline so custom rooms can recolour */
+.pc.s0 .pc-in { background: #e8913a; color: #14100a; }
+.pc.s1 .pc-in { background: #3fbf9f; color: #14100a; }
+.pc.s2 .pc-in { background: #8b6fd4; color: #fdfbf7; }
+.pc.s3 .pc-in { background: #e8556a; color: #fdfbf7; }
+.pc.s4 .pc-in { background: #6b7785; color: #fdfbf7; opacity: .72; }
+.pc.s4 { filter: saturate(.5); }
 .pc svg { width: 66%; height: 66%; display: block; }
+
+/* ---------- barriers ---------- */
+.br {
+  position: absolute; left: 0; top: 0;
+  width: var(--cell); height: var(--cell);
+  transform: translate(calc(var(--c) * var(--cell)), calc(var(--r) * var(--cell)));
+}
+.br-in {
+  position: absolute; inset: 8%;
+  border-radius: 5px; display: grid; place-items: end center;
+  padding-bottom: 8%;
+  background: #6b7785; color: #fdfbf7;
+  box-shadow: 0 3px 7px var(--shadow), inset 0 0 0 1px rgba(255,255,255,.18);
+  background-image: repeating-linear-gradient(135deg,
+    rgba(0,0,0,.16) 0 3px, transparent 3px 7px);
+}
+.br.hp2 .br-in { opacity: .82; }
+.br.hp1 .br-in { opacity: .62; }
+.br .pips { display: flex; gap: 12%; width: 58%; }
+.br .pips i {
+  flex: 1; height: 3px; border-radius: 2px;
+  background: currentColor;
+}
+.br .pips i.off { opacity: .25; }
 .pc.falling .pc-in { transform: scale(.08) rotate(260deg); opacity: 0; }
 .pc.danger .pc-in { animation: alarm 1.1s ease-in-out infinite; }
 @keyframes alarm {
@@ -246,21 +290,19 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
   background: var(--bg2); border: 1px solid var(--line);
   border-radius: 12px; padding: .7rem .9rem; font-weight: 600;
 }
-.turnbar .chip { width: 16px; height: 16px; border-radius: 50%; flex: none; }
-.turnbar .chip.s0 { background: var(--p1); }
-.turnbar .chip.s1 { background: var(--p2); }
+.turnbar .chip { width: 16px; height: 16px; border-radius: 50%; flex: none; background: var(--muted); }
 .turnbar small { display: block; font-weight: 400; color: var(--muted); font-size: .82rem; }
 .warn { color: var(--danger); font-weight: 600; }
 
-.tally { display: flex; gap: .5rem; }
+.tally { display: flex; gap: .4rem; flex-wrap: wrap; }
 .tally div {
-  flex: 1; background: var(--bg2); border: 1px solid var(--line);
-  border-radius: 10px; padding: .5rem .7rem; text-align: center;
+  flex: 1 1 42%; background: var(--bg2); border: 1px solid var(--line);
+  border-radius: 10px; padding: .45rem .6rem; text-align: center;
 }
-.tally b { display: block; font-size: 1.4rem; }
-.tally span { font-size: .78rem; color: var(--muted); }
-.tally .s0 b { color: var(--p1); }
-.tally .s1 b { color: var(--p2); }
+.tally b { display: block; font-size: 1.3rem; }
+.tally span { font-size: .74rem; color: var(--muted); }
+.tally div.out { opacity: .5; }
+.tally div.out b { color: var(--muted) !important; text-decoration: line-through; }
 
 .log {
   background: var(--bg2); border: 1px solid var(--line); border-radius: 12px;
@@ -360,6 +402,31 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
   display: inline-block; padding: .05rem .4rem; border-radius: 5px;
   border: 1px solid var(--line); background: var(--bg3); font-size: .82em;
   font-family: ui-monospace, Consolas, monospace;
+}
+
+/* ---------- custom setup editor ---------- */
+.editrow { display: flex; align-items: center; gap: .35rem; margin-bottom: .45rem; }
+.editlabel {
+  width: 3.4rem; flex: none; font-size: .78rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .05em; color: var(--muted);
+}
+.slot {
+  flex: 1; aspect-ratio: 1; min-width: 0; padding: 0;
+  border-radius: 50%; border: 1px solid var(--line);
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--bg3);
+}
+.slot svg { width: 62%; height: 62%; }
+.slot.empty {
+  background: transparent; border-style: dashed;
+  box-shadow: none;
+}
+.slot:hover { border-color: var(--accent); }
+.colorrow { display: flex; gap: 1rem; flex-wrap: wrap; align-items: center; margin: 1rem 0; }
+.colorrow label { display: flex; align-items: center; gap: .5rem; font-size: .9rem; }
+input[type="color"] {
+  width: 44px; height: 30px; padding: 0; border: 1px solid var(--line);
+  border-radius: 7px; background: none; cursor: pointer;
 }
 
 @media (prefers-reduced-motion: reduce) {

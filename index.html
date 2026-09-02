@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Undertow</title>
-<meta name="description" content="Undertow — a two-player abstract strategy game about pushing and pulling your opponent into the holes in the board.">
+<meta name="description" content="Undertow — a two- or four-player abstract strategy game about pushing and pulling your opponents into the holes in the board.">
 <link rel="stylesheet" href="css/style.css">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e8913a'/><circle cx='50' cy='50' r='20' fill='%2310161c'/></svg>">
 </head>
@@ -29,7 +29,7 @@
   <div class="wrap">
     <div class="hero">
       <h1>Undertow</h1>
-      <p class="sub">Nobody captures anything. You win by shoving the enemy Trident into a hole in the floor.</p>
+      <p class="sub">Nobody captures anything. You win by shoving everyone else's Trident into a hole in the floor.</p>
       <div class="btn-row" style="justify-content:center">
         <a class="btn btn-primary" href="#/play">Play online</a>
         <a class="btn" href="#/howto">How to play</a>
@@ -38,16 +38,28 @@
 
     <div class="grid2">
       <div class="card">
-        <h3 style="margin-top:0">Five holes, twenty-eight pieces</h3>
-        <p class="note">A 7×7 board with five voids scattered through the middle three ranks — randomly placed every game, always symmetric, so neither side gets the better map.</p>
+        <h3 style="margin-top:0">Four holes, one crowded middle</h3>
+        <p class="note">An 11×11 board with four voids clustered in the central core — placed at random every game, always rotationally symmetric, so no seat gets the better map.</p>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Push and pull, never capture</h3>
         <p class="note">Half your army shoves enemies away; the other half drags them closer. A piece only dies when it goes over an edge that isn't there.</p>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">Two players or four</h3>
+        <p class="note">Face one opponent across the board, or take one side each in a four-way brawl where the last Trident standing wins.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">One barrier each</h3>
+        <p class="note">Spend a turn to drop a wall anywhere. It stops everything — movement, pushes, pulls — until enemies have hit it three times.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Build your own army</h3>
+        <p class="note">Custom rooms let you rearrange all fourteen pieces and pick your colours, then hand a friend the code.</p>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">Direct peer-to-peer</h3>
-        <p class="note">Share a five-character room code. Moves travel straight between the two browsers — no account, no game server, nothing stored.</p>
+        <p class="note">Quick Match or a room code. Moves travel straight between browsers — no account, no game server, nothing stored.</p>
       </div>
     </div>
 
@@ -64,15 +76,50 @@
       <div class="lobby">
         <div data-lob="choose">
           <div class="card">
-            <h2 style="margin-top:0">Play online</h2>
-            <p class="note">One of you opens a room and reads out the code; the other types it in. The connection is direct between your two browsers.</p>
-            <div class="btn-row">
-              <button class="primary" id="btnHost">Open a room</button>
+            <h2 style="margin-top:0">Choose an arena</h2>
+            <div class="btn-row" style="margin-bottom:.8rem">
+              <button class="primary" id="btnQuick2">Quick Match · 2 players</button>
+            </div>
+            <p class="note" style="margin-bottom:1.2rem">Standard rules on a random board. Pairs you with whoever else is looking.</p>
+            <div class="btn-row" style="margin-bottom:.8rem">
+              <button id="btnQuick4">Quick Match · 4 players</button>
+            </div>
+            <p class="note" style="margin-bottom:1.2rem">One player on each side of the board. Last Trident standing wins.</p>
+            <div class="btn-row" style="margin-bottom:.8rem">
+              <button id="btnCustomSetup">Custom room</button>
               <button id="btnJoinForm">Join with a code</button>
             </div>
-            <div class="btn-row" id="devrow" style="display:none;margin-top:.6rem">
-              <button id="btnLocal">Local hot-seat</button>
-              <span class="note">Both sides on this screen — for testing.</span>
+            <p class="note">Build your own army and colours, then share the room code.</p>
+            <div class="btn-row" id="devrow" style="display:none;margin-top:1rem;border-top:1px solid var(--line);padding-top:1rem">
+              <button id="btnLocal2">Hot-seat 2P</button>
+              <button id="btnLocal4">Hot-seat 4P</button>
+              <span class="note">All seats on this screen — for testing.</span>
+            </div>
+          </div>
+        </div>
+
+        <div data-lob="searching" style="display:none">
+          <div class="card" style="text-align:center">
+            <h2 style="margin-top:0" id="searchLabel">Finding an opponent</h2>
+            <p class="note dots">Checking who else is waiting</p>
+            <div class="btn-row" style="justify-content:center"><button data-back>Cancel</button></div>
+          </div>
+        </div>
+
+        <div data-lob="custom" style="display:none">
+          <div class="card">
+            <h2 style="margin-top:0">Custom room</h2>
+            <p class="note">Click a slot to cycle through the pieces, or empty it. Both armies use this layout. You need exactly one Trident.</p>
+            <div id="editorGrid" style="margin:1rem 0"></div>
+            <p class="status" id="editorStatus"></p>
+            <div class="colorrow">
+              <label>Your colour <input type="color" id="color0"></label>
+              <label>Their colour <input type="color" id="color1"></label>
+            </div>
+            <div class="btn-row">
+              <button class="primary" id="openCustom">Open the room</button>
+              <button id="resetLayout">Reset</button>
+              <button data-back>Back</button>
             </div>
           </div>
         </div>
@@ -114,11 +161,14 @@
           <div class="tally" id="tally"></div>
           <div class="log" id="log"></div>
           <div class="btn-row">
-            <button id="flip">Flip board</button>
+            <button id="placeBarrier">Place barrier</button>
+            <button id="rotate">Rotate view</button>
+          </div>
+          <div class="btn-row">
             <button id="resign">Resign</button>
             <button id="leave">Leave</button>
           </div>
-          <p class="note" style="margin:0">Click one of your pieces to see where it can go. A dot is a move, a ring is an attack, a red ring means something dies.</p>
+          <p class="note" style="margin:0">A dot is a move, a ring is an attack, a red ring means something dies, an orange square is a barrier you can hit.</p>
         </aside>
       </div>
     </div>
@@ -133,14 +183,14 @@
     <p class="lede">Five minutes of reading and you will know everything. The whole game is two ideas: pieces shove, pieces drag, and the floor has holes in it.</p>
 
     <h2>The one thing to understand</h2>
-    <p>There is no capturing in Undertow. You cannot land on an enemy piece and remove it. The only way anything leaves the board is by being <b>moved onto a void</b> — one of the five holes in the middle of the board. Every attack in the game is an attempt to line an enemy up with a hole and then give them a shove or a tug.</p>
-    <p>You win the moment the enemy <b>Trident</b> goes in.</p>
+    <p>There is no capturing in Undertow. You cannot land on an enemy piece and remove it. The only way anything leaves the board is by being <b>moved onto a void</b> — one of the four holes in the middle of the board. Every attack in the game is an attempt to line an enemy up with a hole and then give them a shove or a tug.</p>
+    <p>You win the moment every other <b>Trident</b> has gone in.</p>
 
     <h2>Taking a turn</h2>
     <ol class="steps">
       <li><b>Pick a piece.</b> Click any of your own pieces. The board lights up with everything it can do.</li>
-      <li><b>Read the marks.</b> A small dot is a quiet move to an empty square. A ring around an enemy is an attack. A <b>red</b> ring means that attack kills — someone is going into a hole.</li>
-      <li><b>Click your choice.</b> That's the whole turn. One action each, then it's the other player's move.</li>
+      <li><b>Read the marks.</b> A small dot is a quiet move to an empty square. A ring around an enemy is an attack. A <b>red</b> ring means that attack kills — someone is going into a hole. An <b>orange square</b> is an enemy barrier you can hit.</li>
+      <li><b>Click your choice.</b> That's the whole turn. One action each, then it's the next player's move.</li>
     </ol>
 
     <h2>Pushing</h2>
@@ -156,23 +206,34 @@
     <p>Your Scythe, Rod and Trident pull. A pull drags the target <i>one square toward you</i> and <b>you don't move at all</b>. You cannot pull a piece that's already next to you — there's nowhere for it to go.</p>
     <p>The critical detail: <b>a pull scan reaches straight across holes.</b> A Rod standing on the lip of a void can reach over it and drag an enemy on the far side directly in. This is the single most dangerous pattern in the game and it is what the Rod exists to do.</p>
 
+    <h2>Your barrier</h2>
+    <p>Each player carries one barrier. Spending a whole turn drops it on any empty square, anywhere on the board — so you can wall off a hole at exactly the moment it matters, or seal a lane your opponent was counting on.</p>
+    <p>A barrier is a genuine wall: nothing moves onto it, no push travels through it, and no pull reaches past it — not even yours. It starts with <b>three health</b>. Any enemy piece that could have attacked through that square can spend its turn hitting the barrier instead, taking one health off. Three hits and it's gone, and the lane reopens.</p>
+    <p>Ranged pieces hit it at range: a Bow can chip a barrier from across the board, a Spear only from exactly two squares, a Sword only from right next to it.</p>
+
     <h2>Reading the danger</h2>
     <p>Your Trident is the strongest piece on the board — it moves three squares in any direction and attacks both ways. That makes it very tempting to use, and using it is how most people lose. Every square it stands on is a square that can be pushed or pulled.</p>
-    <p>When your Trident can be taken on the opponent's very next turn, it pulses red. That warning is a courtesy, not a rule — there is no check, no forced escape, and nothing stops you from walking straight into a hole.</p>
+    <p>When your Trident can be taken on someone's very next turn, it pulses red. That warning is a courtesy, not a rule — there is no check, no forced escape, and nothing stops you from walking straight into a hole.</p>
 
-    <h2>Three ways a game ends</h2>
+    <h2>Four-player games</h2>
+    <p>Four players take one side each, and turns go around the board: Amber, Jade, Violet, Coral. Everyone who isn't you is a target — you can push, pull and strike any of them.</p>
+    <p>When someone's Trident falls they are out, but <b>their army stays on the board</b>. It turns grey, never moves again, and becomes scenery for everyone else: still blocking lanes, still shovable, still very much able to be dropped into a hole. The last player with a Trident wins.</p>
+
+    <h2>Ways a game ends</h2>
     <ul>
-      <li><b>A Trident falls.</b> Its owner loses, instantly.</li>
-      <li><b>Threefold repetition.</b> If the same position occurs three times, the game stops and whoever has more pieces wins. Dead even is a draw — so if you're behind on material, you are the one who has to break the loop.</li>
-      <li><b>No legal moves.</b> If it's your turn and you cannot do anything at all, you lose.</li>
+      <li><b>Tridents fall.</b> Lose yours and you're out. Last one standing wins.</li>
+      <li><b>Threefold repetition.</b> If the same position occurs three times, the game stops and whoever has the most pieces wins. Dead even is a draw — so if you're behind on material, you are the one who has to break the loop.</li>
+      <li><b>No legal moves.</b> If it's your turn and you cannot do anything at all, you're out.</li>
     </ul>
 
-    <h2>Four things worth knowing early</h2>
+    <h2>Things worth knowing early</h2>
     <div class="grid2">
       <div class="card"><h3 style="margin-top:0">Rods want to sit next to holes</h3><p class="note">A Rod on a void's lip threatens everything on the far side of that hole, all the way down the line. Get one there early and your opponent has to spend moves avoiding a whole rank.</p></div>
-      <div class="card"><h3 style="margin-top:0">Back to the wall is safe</h3><p class="note">Nothing can be pushed into the rim. Retreating to the edge genuinely protects a piece — but it also takes it out of the fight.</p></div>
-      <div class="card"><h3 style="margin-top:0">Stacks of three don't move</h3><p class="note">Three pieces in a line along the push direction cannot be shoved at all. Building one in front of a hole shuts that hole down.</p></div>
-      <div class="card"><h3 style="margin-top:0">The Spear hits from range 2</h3><p class="note">It cannot touch anything adjacent, and it drives its target two full squares. It's the only piece that can reach past the front line — and the only one that can feed two pieces into one hole in a single turn.</p></div>
+      <div class="card"><h3 style="margin-top:0">Back to the wall is safe</h3><p class="note">Nothing can be pushed into the rim. Retreating to the edge genuinely protects a piece — but it also takes it out of the fight, and on an 11×11 board the edge is a long way from anywhere.</p></div>
+      <div class="card"><h3 style="margin-top:0">Stacks of three don't move</h3><p class="note">Three pieces in a line along the push direction cannot be shoved at all. Building one in front of a hole shuts that hole down without spending your barrier.</p></div>
+      <div class="card"><h3 style="margin-top:0">The barrier is a tempo weapon</h3><p class="note">Costing a turn to place and three turns to remove, a barrier trades one of your moves for three of theirs — but only if they actually need that square. Dropped somewhere they can ignore, it's just a wasted turn.</p></div>
+      <div class="card"><h3 style="margin-top:0">The Spear hits from range 2</h3><p class="note">It cannot touch anything adjacent, and it drives its target two full squares. It's the only piece that can feed two pieces into one hole in a single turn.</p></div>
+      <div class="card"><h3 style="margin-top:0">In four-player, don't go first</h3><p class="note">Whoever commits to an attack first is usually the one who gets punished by the other two. Dead armies stay on the board as cover — sometimes the corpse is worth more than the kill.</p></div>
     </div>
 
     <h2>The pieces</h2>
@@ -188,39 +249,44 @@
     <p class="lede">The precise version. Where this page and the How to Play page seem to disagree, this one is what the game actually implements.</p>
 
     <h2>1. Board and setup</h2>
-    <p>The board is 7×7. Files are lettered <span class="mono">a</span>–<span class="mono">g</span> left to right; ranks are numbered <span class="mono">1</span>–<span class="mono">7</span> from Amber's side.</p>
-    <p>Five squares are <b>voids</b> — holes in the floor. Voids are always confined to ranks 3–5, so no player's starting position is ever compromised. <span class="mono">d4</span>, the centre square, is always a void; the other four form two pairs placed symmetrically under a 180° rotation, so the two halves of the board are always mirror images. The layout is regenerated at random for every game, and rejected and redrawn if it would cut the board into disconnected regions.</p>
-    <p>Each player has fourteen pieces:</p>
+    <p>The board is 11×11. Files are lettered <span class="mono">a</span>–<span class="mono">k</span>; ranks are numbered <span class="mono">1</span>–<span class="mono">11</span> from Amber's side.</p>
+    <p>Four squares are <b>voids</b> — holes in the floor. They are confined to the central 7×7 core, which is clear of every player's home ground, and they always form a single orbit under a 90° rotation about the centre square. Two-player fairness only needs 180° symmetry, but four-player fairness needs 90°, and under a quarter turn every non-central square has an orbit of exactly four — which is why the count is four and not three. The layout is redrawn at random every game, and rejected if it would cut the board into disconnected regions.</p>
+    <p>Each player has fourteen pieces in two ranks of seven, centred on their own side, leaving two squares of margin at each end so the corners stay empty:</p>
     <div class="scroller"><table>
-      <tr><th>Rank</th><th>a</th><th>b</th><th>c</th><th>d</th><th>e</th><th>f</th><th>g</th></tr>
-      <tr><td>Back (1 / 7)</td><td>Bow</td><td>Rod</td><td>Spear</td><td><b>Trident</b></td><td>Spear</td><td>Rod</td><td>Bow</td></tr>
-      <tr><td>Front (2 / 6)</td><td>Sword</td><td>Scythe</td><td>Sword</td><td>Scythe</td><td>Sword</td><td>Scythe</td><td>Sword</td></tr>
+      <tr><th>Rank</th><th></th><th></th><th></th><th></th><th></th><th></th><th></th></tr>
+      <tr><td>Back</td><td>Bow</td><td>Rod</td><td>Spear</td><td><b>Trident</b></td><td>Spear</td><td>Rod</td><td>Bow</td></tr>
+      <tr><td>Front</td><td>Sword</td><td>Scythe</td><td>Sword</td><td>Scythe</td><td>Sword</td><td>Scythe</td><td>Sword</td></tr>
     </table></div>
-    <p>Amber occupies ranks 1–2 and always moves first. Violet occupies ranks 6–7.</p>
+    <p>In a two-player game Amber takes the south side and Violet the north. In a four-player game Jade takes the west and Coral the east, and turns pass Amber → Jade → Violet → Coral. Amber always moves first.</p>
 
     <h2>2. Turns</h2>
-    <p>On your turn you take exactly one action with exactly one piece: either a <b>move</b> to an empty square, or an <b>attack</b> on an enemy piece. Passing is not allowed. No piece may ever move onto, or slide through, a void or an occupied square.</p>
+    <p>On your turn you take exactly one action: a <b>move</b> to an empty square, an <b>attack</b> on an enemy piece, a <b>strike</b> against an enemy barrier, or <b>placing your barrier</b>. Passing is not allowed. No piece may move onto, or slide through, a void, an occupied square or a barrier.</p>
 
     <h2>3. Voids</h2>
-    <p>A void is a permanent hole. Any piece that is displaced onto a void is removed from the game. Voids never fill up — a hole that has swallowed three pieces is exactly as dangerous as it was at the start. Voids block movement and block push paths, but they do <b>not</b> block pull scans.</p>
+    <p>A void is a permanent hole. Any piece displaced onto a void is removed from the game. Voids never fill up. They block movement and push paths, but they do <b>not</b> block pull scans.</p>
 
     <h2>4. Pushing</h2>
-    <p>A push scans outward from the attacker in one direction. Every square between the attacker and its target must be empty; a void or any piece stops the scan short. The first enemy piece found within the piece's range is the target.</p>
-    <p>The <b>chain</b> is the target plus any pieces standing in an unbroken line directly behind it, up to a maximum of two pieces total. If three or more pieces are stacked in the push direction, the push is illegal.</p>
-    <p>The chain is then driven <span class="mono">n</span> squares away from the attacker, one step at a time. On each step:</p>
+    <p>A push scans outward from the attacker in one direction. Every square between the attacker and its target must be empty; a void, a barrier or any piece stops the scan short. The first enemy piece found within range is the target.</p>
+    <p>The <b>chain</b> is the target plus any pieces standing in an unbroken line directly behind it, up to two pieces in total. Three or more stacked in the push direction makes the push illegal.</p>
+    <p>The chain is driven <span class="mono">n</span> squares away, one step at a time. On each step:</p>
     <ul>
-      <li>If the square ahead of the leading piece is <b>off the board</b>, the push stops there. Remaining steps are forfeited.</li>
-      <li>If it is a <b>void</b>, the leading piece falls in and is removed, and every piece behind it advances one square into the space freed up.</li>
+      <li>If the square ahead of the leading piece is <b>off the board</b> or holds a <b>barrier</b>, the push stops there and the remaining steps are forfeited.</li>
+      <li>If it is a <b>void</b>, the leading piece falls in and is removed, and everything behind advances one square into the space freed up.</li>
       <li>Otherwise every piece in the chain advances one square.</li>
     </ul>
     <p>If nothing can move even one square, the push is not a legal move. Otherwise the attacker finishes by advancing into the square the target originally occupied — one square for a contact attacker, two for the Spear.</p>
-    <p class="note">Consequence worth noting: a two-piece chain being driven two squares into a hole directly ahead of it loses <i>both</i> pieces, because the second step feeds the survivor into the same void.</p>
+    <p class="note">Consequence worth noting: a two-piece chain driven two squares into a hole directly ahead of it loses <i>both</i> pieces, because the second step feeds the survivor into the same void.</p>
 
     <h2>5. Pulling</h2>
-    <p>A pull scans outward from the attacker in one direction, <b>passing over both empty squares and voids</b>. The first piece the scan meets is the target. If that piece is your own, or is directly adjacent to you, there is no pull.</p>
+    <p>A pull scans outward, <b>passing over both empty squares and voids</b> but never over a barrier. The first piece the scan meets is the target. If that piece is your own, or is directly adjacent to you, there is no pull.</p>
     <p>The target is dragged one square toward the attacker. That square is necessarily empty or a void; if it is a void, the target is removed. The puller does not move, and pulls never chain.</p>
 
-    <h2>6. The pieces</h2>
+    <h2>6. Barriers</h2>
+    <p>Each player has exactly one barrier, held off the board at the start. Placing it costs a whole turn and it may go on any empty, non-void square anywhere on the board. It cannot be moved, pushed or pulled afterwards.</p>
+    <p>A barrier blocks <b>everything</b>, including its owner's own pieces: no movement onto or through it, no push path, no pull scan. It starts at <b>3 health</b>.</p>
+    <p>Any piece whose push or pull scan is stopped by a barrier it does not own may spend its turn <b>striking</b> it instead, removing 1 health. The striker does not move. Range and direction follow that piece's normal attack geometry — a Sword must be adjacent, a Spear must be exactly two squares away, a Rod or Bow can strike from any distance along its line, and a puller cannot strike an adjacent barrier for the same reason it cannot pull an adjacent piece. At 0 health the barrier is removed and the square becomes ordinary ground. You may never strike your own barrier.</p>
+
+    <h2>7. The pieces</h2>
     <div class="scroller"><table>
       <tr><th>Piece</th><th>Movement</th><th>Attack</th></tr>
       <tr><td><b>Sword</b></td><td>1 square, orthogonal</td><td>Push, orthogonal, contact only, 1 square</td></tr>
@@ -232,18 +298,19 @@
     </table></div>
     <p>When the Trident's push of one and push of two would produce different outcomes, the game asks which you meant.</p>
 
-    <h2>7. Winning</h2>
+    <h2>8. Elimination and winning</h2>
     <ol>
-      <li><b>Trident.</b> A player whose Trident is removed loses immediately. In the rare case where a single push removes both Tridents at once, the player who made that move loses.</li>
-      <li><b>Repetition.</b> When the same position — the same pieces on the same squares with the same player to move — occurs for the third time, the game ends. The player with more pieces on the board wins; an exact tie is a draw.</li>
-      <li><b>No legal moves.</b> A player with no legal action available on their turn loses.</li>
-      <li><b>Resignation.</b> Available at any time.</li>
+      <li><b>Trident.</b> A player whose Trident is removed is out immediately. Their remaining pieces and barrier stay on the board as <b>neutral</b>: they never take a turn, but they still block, can still be pushed and pulled by anyone, and can still be dropped into holes. In the rare case where a single push removes the last two Tridents at once, the player who made that move loses.</li>
+      <li><b>Last standing.</b> When only one player still has a Trident, they win.</li>
+      <li><b>Repetition.</b> When the same position — the same pieces and barriers on the same squares with the same player to move — occurs for the third time, the game ends and the surviving player with the most pieces wins. An exact tie is a draw.</li>
+      <li><b>No legal moves.</b> A player with no legal action on their turn is out. In a two-player game that ends it; with more players the game continues without them.</li>
+      <li><b>Resignation and disconnection.</b> Both remove that player's Trident and follow the elimination rule above.</li>
     </ol>
 
-    <h2>8. Notation</h2>
+    <h2>9. Notation</h2>
     <p>Moves are recorded as a piece letter, the origin square, a connector, and the target square. Because Sword, Scythe and Spear all begin with the same letter, the letters are <span class="mono">S</span>word, s<span class="mono">C</span>ythe, s<span class="mono">P</span>ear, <span class="mono">B</span>ow, <span class="mono">R</span>od, <span class="mono">T</span>rident.</p>
-    <p><span class="mono">-</span> is a quiet move, <span class="mono">&gt;</span> a push, <span class="mono">&lt;</span> a pull. A trailing digit is a push distance greater than one; each <span class="mono">*</span> is a piece that went into a void.</p>
-    <p class="note">So <span class="mono">Rc3&lt;c5*</span> is a Rod on c3 pulling the piece on c5 into a hole, and <span class="mono">Pc2&gt;c4 2**</span> is a Spear driving a pair two squares and losing both to the same void.</p>
+    <p><span class="mono">-</span> is a quiet move, <span class="mono">&gt;</span> a push, <span class="mono">&lt;</span> a pull, <span class="mono">!</span> a barrier strike. A trailing digit is a push distance greater than one; each <span class="mono">*</span> is a piece that went into a void. Placing a barrier is <span class="mono">+</span> and the square.</p>
+    <p class="note">So <span class="mono">Rc3&lt;c5*</span> is a Rod pulling the piece on c5 into a hole, <span class="mono">Pc2&gt;c4 2**</span> is a Spear driving a pair two squares and losing both to the same void, <span class="mono">+f6</span> drops a barrier on f6, and <span class="mono">Sf4!f5(2)</span> hits a barrier down to two health.</p>
   </div>
 </section>
 
@@ -278,7 +345,7 @@
         <input type="checkbox" id="setCoords">
       </label>
       <label class="row">
-        <span>Sound<small>Short tones for moves, pushes and falls.</small></span>
+        <span>Sound<small>Short tones for moves, pushes, strikes and falls.</small></span>
         <input type="checkbox" id="setSound">
       </label>
     </div>
@@ -291,21 +358,27 @@
 <section class="page" id="page-about" data-title="About">
   <div class="wrap">
     <h1>About</h1>
-    <p class="lede">Undertow is an original two-player abstract strategy game. This is the complete implementation — engine, interface and networking — running entirely in your browser.</p>
+    <p class="lede">Undertow is an original two- or four-player abstract strategy game. This is the complete implementation — engine, interface and networking — running entirely in your browser.</p>
 
-    <h2>How the multiplayer works</h2>
-    <p>There is no game server. When you open a room, your browser registers a short code with a public WebRTC matchmaking broker, which does nothing but introduce the two of you. From then on, moves travel directly between the two browsers. No account, no database, no record of the game.</p>
-    <p>Neither browser trusts the other. A move arrives as a short reference, not as a board state, and the receiving side regenerates the full list of legal moves for the current position and looks for a match. A move that isn't in that list is rejected and the connection is dropped, so a modified client cannot force an illegal position.</p>
+    <h2>How Quick Match works without a server</h2>
+    <p>Room codes are easy: the broker only has to answer "where is the peer named ABC23?". Matchmaking asks a harder question — "who else is waiting right now?" — and something normally has to remember that list.</p>
+    <p>Instead, players agree on a well-known name. Looking for a game, your browser first tries to <i>connect</i> to that name. If somebody answers, you're matched. If nobody does, you <i>become</i> that name and wait.</p>
+    <p>A waiting player can't simply play on the well-known name — releasing it later would kill the game, and holding it would block everyone else. So the waiter runs a throwaway beacon under that name alongside its own private connection. The beacon hands each arrival the private address and, once the table is full, shuts down and frees the name for the next group.</p>
+    <p>It is honest about its limits: it works well when a handful of people are online and gets slower as more pile in, there's no queue or ordering, and a browser that dies leaves a stale name that others waste a few seconds on. Room codes are always there as the reliable path.</p>
+
+    <h2>Nobody trusts anybody</h2>
+    <p>The host is authoritative. Guests send an <i>intent</i> — a short reference to a move, never a board state — and the host regenerates the full list of legal moves for the current position and looks for a match before broadcasting the result. Every other player re-derives it the same way. A move that isn't in the list is rejected, so a modified client cannot force an illegal position.</p>
 
     <h2>Design notes</h2>
-    <p>The rule that shapes everything else is that pushes always end with the attacker taking the square its target vacated. That makes a push simultaneously an attack and an advance, which is why the board opens up quickly despite starting 57% full.</p>
+    <p>The rule that shapes everything else is that pushes always end with the attacker taking the square its target vacated. That makes a push simultaneously an attack and an advance.</p>
     <p>The second is that pull scans ignore voids while push scans are blocked by them. Holes are cover against half the army and an open lane for the other half, so the same square is safe or lethal depending on what is looking at it.</p>
+    <p>The barrier is the counterweight to both. It is the only thing that stops a pull, which means it's the only reliable answer to a Rod that has found a good hole.</p>
 
     <h2>Playing offline</h2>
-    <p>Everything except online play works with no internet connection at all — the rules, the board, the settings and the themes are entirely local. Only the initial handshake between two players needs the network.</p>
+    <p>Everything except online play works with no internet connection at all — the rules, the board, the settings and the themes are entirely local. Only the initial handshake between players needs the network.</p>
 
     <h2>Verifying the rules</h2>
-    <p>The rule engine has its own test suite covering push chains, wall blocks, void interactions, the pull-across-a-hole case, all three endings and a randomised full-game fuzz run. Open <a href="tests.html">tests.html</a> to run it.</p>
+    <p>The rule engine has its own test suite covering push chains, wall blocks, void and barrier interactions, the pull-across-a-hole case, four-player elimination, every ending, notation, network move validation, and randomised full-game fuzz runs for both two and four players. Open <a href="tests.html">tests.html</a> to run it.</p>
   </div>
 </section>
 

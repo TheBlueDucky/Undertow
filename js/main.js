@@ -1,5 +1,6 @@
-/* Undertow - main.js
- * Routing, settings, sound, lobby and the glue between engine, board and peer.
+/* Undertow - main.js  (v2)
+ * Routing, settings, sound, the three arenas, and the glue between the
+ * engine, the board and the peers.
  */
 (function (root) {
   'use strict';
@@ -15,6 +16,7 @@
     { id: 'neon', name: 'Neon', cols: ['#101024', '#ffb02e', '#b14aff', '#000000'] },
     { id: 'moss', name: 'Moss', cols: ['#1d2f24', '#e0a13c', '#9d7fd6', '#050a07'] }
   ];
+  var DEFAULT_COLORS = ['#e8913a', '#3fbf9f', '#8b6fd4', '#e8556a', '#6b7785'];
   var DEFAULTS = { theme: 'abyss', animMs: 280, hints: true, danger: true, coords: true, sound: true };
   var settings = load();
 
@@ -24,25 +26,23 @@
     try {
       var raw = localStorage.getItem('undertow.settings');
       if (raw) { var o = JSON.parse(raw); for (k in DEFAULTS) if (o[k] !== undefined) s[k] = o[k]; }
-    } catch (e) { /* private mode, blocked storage - defaults are fine */ }
+    } catch (e) {}
     return s;
   }
-  function save() {
-    try { localStorage.setItem('undertow.settings', JSON.stringify(settings)); } catch (e) {}
-  }
+  function save() { try { localStorage.setItem('undertow.settings', JSON.stringify(settings)); } catch (e) {} }
   function applyTheme() { document.documentElement.setAttribute('data-theme', settings.theme); }
 
   /* ================= sound ================= */
   var actx = null;
-  function tone(freqA, freqB, dur, type, vol) {
+  function tone(a, b, dur, type, vol) {
     if (!settings.sound) return;
     try {
       if (!actx) actx = new (root.AudioContext || root.webkitAudioContext)();
       if (actx.state === 'suspended') actx.resume();
       var o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
       o.type = type || 'sine';
-      o.frequency.setValueAtTime(freqA, t);
-      if (freqB) o.frequency.exponentialRampToValueAtTime(freqB, t + dur);
+      o.frequency.setValueAtTime(a, t);
+      if (b) o.frequency.exponentialRampToValueAtTime(b, t + dur);
       g.gain.setValueAtTime(0.0001, t);
       g.gain.exponentialRampToValueAtTime(vol || 0.09, t + 0.012);
       g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
@@ -54,6 +54,8 @@
     move: function () { tone(420, 300, 0.08, 'triangle', 0.05); },
     push: function () { tone(200, 130, 0.14, 'square', 0.05); },
     fall: function () { tone(340, 42, 0.62, 'sawtooth', 0.08); },
+    place: function () { tone(150, 220, 0.16, 'square', 0.06); },
+    strike: function () { tone(660, 240, 0.13, 'square', 0.06); },
     win: function () { tone(392, 0, 0.18, 'sine', 0.09); setTimeout(function () { tone(587, 0, 0.4, 'sine', 0.09); }, 150); },
     lose: function () { tone(240, 90, 0.7, 'sine', 0.09); }
   };
@@ -70,36 +72,54 @@
     root.scrollTo(0, 0);
   }
 
-  /* ================= game ================= */
+  /* ================= game state ================= */
   var board = null, state = null, session = null;
-  var mode = 'none';          // 'online' | 'local'
-  var mySide = null;          // null in hot-seat
-  var isHost = false, busy = false, gameSeed = 0;
+  var mode = 'none';        // 'quick2' | 'quick4' | 'custom' | 'local'
+  var mySeat = null, isHost = false, busy = false, seatOf = null, gameOpts = null;
+  var colors = DEFAULT_COLORS.slice();
+  var customLayout = R.defaultLayout(), customColors = DEFAULT_COLORS.slice();
 
-  function newGame(seed, side) {
-    gameSeed = seed >>> 0;
-    state = R.createState(gameSeed);
-    mySide = side;
-    board.mySide = side;
+  function seatsFor(m) { return m === 'quick4' ? 4 : 2; }
+
+  function newGame(opts, seat) {
+    gameOpts = opts;
+    state = R.createState(opts);
+    mySeat = seat;
+    board.mySide = seat;
+    board.colors = colors;
     board.locked = false;
-    board.flipped = (side === R.VIOLET);
     board.setLastMove();
-    board.render(state);
+    board.render(state);                 // hand the board its state before anything reads it
+    board.setPerspective(seat === null ? R.SOUTH : seat);
     clearOverlay();
     updatePanel();
-    fitBoard();   // the game view was hidden until now, so measure it here
+    fitBoard();
   }
 
-  function play(mv, fromPeer) {
+  // Everyone runs the engine. The host is the only one that decides.
+  function requestMove(mv) {
     if (busy || !state || state.result) return;
-    busy = true;
-    var plyBefore = state.ply;
-    var kills = mv.res ? mv.res.deaths.length : 0;
+    if (mode === 'local' || isHost) { commitMove(mv); return; }
+    session.send({ t: 'intent', key: R.moveKey(mv) });
+    busy = true;                       // wait for the host to confirm
+    setTimeout(function () { busy = false; }, 4000);
+  }
 
-    if (!fromPeer && mode === 'online') {
-      session.send({ t: 'move', key: R.moveKey(mv), ply: plyBefore });
+  function commitMove(mv) {
+    if (!state || state.result) return;
+    if (mode !== 'local' && isHost) {
+      session.broadcast({ t: 'move', key: R.moveKey(mv), ply: state.ply });
     }
-    if (mv.kind === 'move') Sound.move(); else Sound.push();
+    applyLocally(mv);
+  }
+
+  function applyLocally(mv) {
+    busy = true;
+    var kills = mv.res ? mv.res.deaths.length : 0;
+    if (mv.kind === 'place') Sound.place();
+    else if (mv.kind === 'strike') Sound.strike();
+    else if (mv.kind === 'move') Sound.move();
+    else Sound.push();
     if (kills) setTimeout(Sound.fall, 90);
 
     board.animate(mv, function () {
@@ -114,24 +134,24 @@
   function endGame(res) {
     board.locked = true;
     var title, sub;
+    var name = function (s) { return s === null || s === undefined ? '—' : R.SEAT_NAMES[s]; };
+    // seat count comes from the position, not the mode string (hot-seat 4P is 'local')
+    var nSeats = state ? state.seats.length : 2;
     if (res.type === 'trident') {
-      title = res.winner === null ? 'Both Tridents lost' : R.SIDE_NAMES[res.winner] + ' wins';
-      sub = res.both ? 'Both Tridents went into the void in one push. Whoever caused it loses.'
-                     : 'The ' + R.SIDE_NAMES[1 - res.winner] + ' Trident went into the void.';
+      title = res.winner === null ? 'Everyone fell' : name(res.winner) + ' wins';
+      sub = res.both ? 'Every Trident went into the void.'
+        : (nSeats === 4 ? 'Last Trident standing.' : 'The losing Trident went into the void.');
     } else if (res.type === 'repetition') {
-      title = res.winner === null ? 'Draw' : R.SIDE_NAMES[res.winner] + ' wins';
-      sub = 'Threefold repetition. Pieces: Amber ' + res.counts[0] + ', Violet ' + res.counts[1] +
-            (res.winner === null ? ' — dead even.' : '.');
+      title = res.winner === null ? 'Draw' : name(res.winner) + ' wins';
+      sub = 'Threefold repetition — decided on pieces remaining.';
     } else if (res.type === 'resign') {
-      title = R.SIDE_NAMES[res.winner] + ' wins';
-      sub = R.SIDE_NAMES[1 - res.winner] + ' resigned.';
+      title = name(res.winner) + ' wins';
+      sub = 'By resignation.';
     } else {
-      title = R.SIDE_NAMES[res.winner] + ' wins';
-      sub = R.SIDE_NAMES[1 - res.winner] + ' has no legal moves left.';
+      title = name(res.winner) + ' wins';
+      sub = name(res.stuck) + ' has no legal moves left.';
     }
-    if (mySide === null) Sound.win();
-    else if (res.winner === mySide) Sound.win();
-    else Sound.lose();
+    if (mySeat === null || res.winner === mySeat) Sound.win(); else Sound.lose();
     showOverlay(title, sub, true);
   }
 
@@ -139,74 +159,74 @@
     clearOverlay();
     var o = document.createElement('div');
     o.className = 'overlay';
-    var btn = offerRematch
+    var btns = offerRematch
       ? '<div class="btn-row" style="justify-content:center;margin-top:1rem">' +
-        '<button class="primary" id="rematch">Rematch</button>' +
+        (mode === 'local' || isHost ? '<button class="primary" id="rematch">Rematch</button>' : '') +
         '<button id="toLobby">Leave</button></div>'
       : '';
-    o.innerHTML = '<div class="box"><h2>' + esc(title) + '</h2><p class="note">' + esc(sub) + '</p>' + btn + '</div>';
+    o.innerHTML = '<div class="box"><h2>' + esc(title) + '</h2><p class="note">' + esc(sub) + '</p>' + btns + '</div>';
     $('#board').appendChild(o);
-    var rm = $('#rematch');
-    if (rm) rm.onclick = requestRematch;
-    var lb = $('#toLobby');
-    if (lb) lb.onclick = leaveGame;
+    if ($('#rematch')) $('#rematch').onclick = doRematch;
+    if ($('#toLobby')) $('#toLobby').onclick = leaveGame;
   }
   function clearOverlay() { var o = $('#board .overlay'); if (o) o.remove(); }
 
-  function requestRematch() {
-    if (mode === 'local') { newGame(Net.randomSeed(), null); return; }
-    if (isHost) {
-      var seed = Net.randomSeed(), guestSide = (mySide === R.AMBER) ? R.AMBER : R.VIOLET;
-      // swap who plays Amber each rematch
-      guestSide = mySide;                    // host takes the guest's old side
-      session.send({ t: 'rematch', seed: seed, guestSide: 1 - guestSide });
-      newGame(seed, guestSide);
-      status('New game. You are ' + R.SIDE_NAMES[guestSide] + '.', 'good');
-    } else {
-      session.send({ t: 'rematch-req' });
-      showOverlay('Rematch requested', 'Waiting for the host to accept.', false);
-    }
+  function doRematch() {
+    var opts = { size: 11, seats: state ? state.seats.length : seatsFor(mode),
+                 seed: Net.randomSeed(), layouts: gameOpts.layouts };
+    if (mode === 'local') { newGame(opts, null); return; }
+    session.broadcast({ t: 'rematch', seed: opts.seed });
+    newGame(opts, mySeat);
   }
 
   function leaveGame() {
-    if (session) { try { session.send({ t: 'bye' }); } catch (e) {} session.close(); session = null; }
-    mode = 'none'; state = null;
+    if (session) { session.close(); session = null; }
+    mode = 'none'; state = null; seatOf = null;
     showLobby('choose');
   }
 
   /* ================= panel ================= */
   function updatePanel() {
     if (!state) return;
-    var turn = $('#turn'), n = R.countPieces(state);
-    var who = R.SIDE_NAMES[state.toMove];
-    var yours = (mySide !== null && state.toMove === mySide);
+    var n = R.countPieces(state);
+    var who = R.SEAT_NAMES[state.toMove];
+    var yours = (mySeat !== null && state.toMove === mySeat);
     var label = state.result ? 'Game over'
-      : (mode === 'online' ? (yours ? 'Your move' : 'Waiting for ' + who) : who + ' to move');
+      : (mode === 'local' ? who + ' to move' : (yours ? 'Your move' : 'Waiting for ' + who));
     var danger = !state.result && settings.danger && R.tridentInDanger(state, state.toMove);
-    turn.innerHTML =
-      '<span class="chip s' + state.toMove + '"></span>' +
-      '<span>' + esc(label) +
-      '<small>' + (state.result ? 'Move ' + state.ply
-        : (danger ? '<span class="warn">Trident can be taken this turn</span>'
-                  : who + ' · move ' + (state.ply + 1))) + '</small></span>';
+    $('#turn').innerHTML =
+      '<span class="chip" style="background:' + colors[state.toMove] + '"></span>' +
+      '<span>' + esc(label) + '<small>' +
+      (state.result ? 'Move ' + state.ply
+        : (danger ? '<span class="warn">Trident can be taken this turn</span>' : who + ' · move ' + (state.ply + 1))) +
+      '</small></span>';
 
-    $('#tally').innerHTML =
-      '<div class="s0"><b>' + n[0] + '</b><span>Amber</span></div>' +
-      '<div class="s1"><b>' + n[1] + '</b><span>Violet</span></div>';
+    var html = '';
+    for (var s = 0; s < state.seats.length; s++) {
+      var seat = state.seats[s], dead = !state.alive[seat];
+      html += '<div' + (dead ? ' class="out"' : '') + '><b style="color:' + colors[seat] + '">' + n[seat] +
+        '</b><span>' + R.SEAT_NAMES[seat] + (dead ? ' · out' : '') + '</span></div>';
+    }
+    if (n[R.NEUTRAL]) html += '<div class="out"><b>' + n[R.NEUTRAL] + '</b><span>Abandoned</span></div>';
+    $('#tally').innerHTML = html;
 
     var log = $('#log');
-    if (!state.log.length) { log.innerHTML = '<div class="empty">No moves yet.</div>'; }
+    if (!state.log.length) log.innerHTML = '<div class="empty">No moves yet.</div>';
     else {
-      var html = '';
-      for (var i = 0; i < state.log.length; i += 2) {
-        html += '<div><i>' + (i / 2 + 1) + '</i><span>' + esc(state.log[i]) +
-          (state.log[i + 1] ? '  ' + esc(state.log[i + 1]) : '') + '</span></div>';
+      var per = state.seats.length, out = '';
+      for (var i = 0; i < state.log.length; i += per) {
+        out += '<div><i>' + (i / per + 1) + '</i><span>' +
+          state.log.slice(i, i + per).map(esc).join('  ') + '</span></div>';
       }
-      log.innerHTML = html;
+      log.innerHTML = out;
       log.scrollTop = log.scrollHeight;
     }
+
+    var pb = $('#placeBarrier');
+    pb.disabled = !board.canPlace();
+    pb.textContent = board.placing ? 'Cancel placement'
+      : (state.barrierLeft[mySeat === null ? state.toMove : mySeat] ? 'Place barrier' : 'Barrier used');
     $('#resign').disabled = !!state.result || mode === 'none';
-    $('#flip').disabled = false;
   }
 
   function esc(s) {
@@ -230,116 +250,252 @@
     el.className = 'status' + (kind ? ' ' + kind : '');
   }
 
-  function handlers(host) {
+  /* ================= networking glue ================= */
+  function startAsHost(m, opts) {
+    mode = m; isHost = true; seatOf = new Map();
+    var seed = Net.randomSeed();
+    gameOpts = { size: 11, seats: seatsFor(m), seed: seed, layouts: opts && opts.layouts };
+    colors = (opts && opts.colors) || DEFAULT_COLORS.slice();
+    showLobby('none');
+    newGame(gameOpts, R.SOUTH);
+    board.locked = true;                       // nobody moves until the table fills
+    status(seatsFor(m) === 4 ? 'Waiting for three players to join…' : 'Waiting for an opponent…');
+  }
+
+  function guestSeats(m) {
+    return seatsFor(m) === 4 ? [R.WEST, R.NORTH, R.EAST] : [R.NORTH];
+  }
+
+  function onGuestJoined(conn, count, s) {
+    var seat = guestSeats(mode)[count - 1];
+    seatOf.set(conn, seat);
+    conn.send({
+      t: 'init', v: 2, mode: mode, seed: gameOpts.seed, seats: seatsFor(mode),
+      yourSeat: seat, colors: colors,
+      layouts: gameOpts.layouts ? encodeLayouts(gameOpts.layouts) : null
+    });
+    var need = seatsFor(mode) === 4 ? 3 : 1;
+    if (s.conns.length >= need) {
+      s.broadcast({ t: 'start' });
+      board.locked = false;
+      status('Everyone is here. ' + R.SEAT_NAMES[R.SOUTH] + ' moves first.', 'good');
+      updatePanel();
+    } else {
+      status('Waiting — ' + s.conns.length + ' of ' + need + ' joined…');
+    }
+  }
+
+  function encodeLayouts(l) {
+    if (!l) return null;
+    var o = {};
+    for (var k in l) o[k] = R.encodeLayout(l[k]);
+    return o;
+  }
+  function decodeLayouts(o) {
+    if (!o) return null;
+    var l = {};
+    for (var k in o) l[k] = R.decodeLayout(o[k]);
+    return l;
+  }
+
+  function netHandlers() {
     return {
+      onStatus: function (m) { status(m + '…'); },
       onReady: function (code) {
-        if (host) { $('#roomcode').textContent = code; showLobby('hosting'); }
-        else status('Connecting to room ' + code, '');
+        if (isHost && mode === 'custom') { $('#roomcode').textContent = code; }
       },
+      onWaiting: function (s) {
+        // quick match: we became the beacon, so we are the host
+        if (mode === 'none') return;
+        isHost = true; seatOf = new Map();
+        if (!state) startAsHost(mode, { layouts: null, colors: DEFAULT_COLORS.slice() });
+      },
+      onGuest: function (conn, count, s) { onGuestJoined(conn, count, s); },
       onOpen: function (s) {
-        if (host) {
-          var seed = Net.randomSeed();
-          s.send({ t: 'init', v: 1, seed: seed, guestSide: R.VIOLET });
-          mode = 'online'; isHost = true;
-          showLobby('none');
-          newGame(seed, R.AMBER);
-          status('Opponent connected. You are Amber and move first.', 'good');
-        } else {
-          s.send({ t: 'hello', v: 1 });
-          status('Connected. Waiting for the board…', 'good');
-        }
+        // we are a guest; wait for init
+        isHost = false;
+        status('Connected. Waiting for the board…', 'good');
       },
-      onData: function (d, s) { onMessage(d, s, host); },
-      onClose: function () {
-        if (mode !== 'online') return;
-        board.locked = true;
-        showOverlay('Opponent disconnected', 'The connection dropped. The game cannot continue.', false);
-        var box = $('#board .box');
-        if (box) {
-          var b = document.createElement('button');
-          b.textContent = 'Back to lobby'; b.className = 'primary';
-          b.style.marginTop = '1rem'; b.onclick = leaveGame;
-          box.appendChild(b);
+      onData: function (d, conn, s) { onMessage(d, conn, s); },
+      onPeerGone: function (conn, s) {
+        if (mode === 'none' || !state) return;
+        if (isHost) {
+          var seat = seatOf && seatOf.get(conn);
+          if (seat === undefined || state.result) return;
+          R.resignSeat(state, seat);
+          s.broadcast({ t: 'gone', seat: seat });
+          board.render(state); updatePanel();
+          status(R.SEAT_NAMES[seat] + ' disconnected.', 'err');
+          if (state.result) endGame(state.result);
+        } else {
+          board.locked = true;
+          showOverlay('Host disconnected', 'The player hosting this game left, so it cannot continue.', false);
+          addLeaveButton();
         }
       },
       onError: function (msg) {
+        showLobby('choose');   // this clears the status line, so set it after
         status(msg, 'err');
-        showLobby('choose');
         if (session) { session.close(); session = null; }
+        mode = 'none';
       }
     };
   }
 
-  function onMessage(d, s, host) {
-    if (d.t === 'hello' && host) { return; }
-    if (d.t === 'init' && !host) {
-      mode = 'online'; isHost = false;
+  function addLeaveButton() {
+    var box = $('#board .box');
+    if (!box) return;
+    var b = document.createElement('button');
+    b.className = 'primary'; b.textContent = 'Back to lobby';
+    b.style.marginTop = '1rem'; b.onclick = leaveGame;
+    box.appendChild(b);
+  }
+
+  function onMessage(d, conn, s) {
+    if (d.t === 'init' && !isHost) {
+      mode = d.mode; mySeat = d.yourSeat;
+      colors = d.colors || DEFAULT_COLORS.slice();
+      gameOpts = { size: 11, seats: d.seats, seed: d.seed, layouts: decodeLayouts(d.layouts) };
       showLobby('none');
-      newGame(d.seed, d.guestSide);
-      status('Connected. You are ' + R.SIDE_NAMES[d.guestSide] + '.', 'good');
+      newGame(gameOpts, d.yourSeat);
+      board.locked = true;
+      status('You are ' + R.SEAT_NAMES[d.yourSeat] + '. Waiting for the table to fill…', 'good');
+      if (s.matched) s.matched();
       return;
     }
-    if (d.t === 'move') {
+    if (d.t === 'start' && !isHost) {
+      board.locked = false;
+      status('Game on. You are ' + R.SEAT_NAMES[mySeat] + '.', 'good');
+      updatePanel();
+      return;
+    }
+    if (d.t === 'intent' && isHost) {
+      if (!state || state.result) return;
+      var seat = seatOf.get(conn);
+      if (seat === undefined || seat !== state.toMove) return;      // not their turn
+      var mv = R.matchMove(state, d.key);
+      if (!mv) { try { conn.send({ t: 'reject' }); } catch (e) {} return; }
+      if (mv.from >= 0 && R.owner(state.board[mv.from]) !== seat) return;
+      commitMove(mv);
+      return;
+    }
+    if (d.t === 'move' && !isHost) {
       if (!state || state.result) return;
       if (d.ply !== state.ply) {
         board.locked = true;
-        showOverlay('Out of sync', 'The two boards disagree about the move number. The game cannot continue safely.', false);
+        showOverlay('Out of sync', 'The boards disagree about the move number, so the game cannot continue safely.', false);
+        addLeaveButton();
         return;
       }
-      var mv = R.matchMove(state, d.key);
-      if (!mv) {
+      var m2 = R.matchMove(state, d.key);
+      if (!m2) {
         board.locked = true;
-        showOverlay('Illegal move received', 'Your opponent sent a move this position does not allow. Disconnected.', false);
+        showOverlay('Illegal move received', 'The host sent a move this position does not allow. Disconnected.', false);
+        addLeaveButton();
         if (session) session.close();
         return;
       }
-      if (R.owner(state.board[mv.from]) === mySide) return; // never accept moves for our own side
-      play(mv, true);
+      busy = false;
+      applyLocally(m2);
       return;
     }
-    if (d.t === 'resign') { state.result = { type: 'resign', winner: mySide }; endGame(state.result); return; }
-    if (d.t === 'rematch-req' && host) {
-      showOverlay('Rematch?', 'Your opponent wants to play again.', false);
-      var box = $('#board .box');
-      var b = document.createElement('button');
-      b.className = 'primary'; b.textContent = 'Start rematch'; b.style.marginTop = '1rem';
-      b.onclick = requestRematch;
-      box.appendChild(b);
+    if (d.t === 'reject' && !isHost) { busy = false; status('That move was rejected.', 'err'); return; }
+    if (d.t === 'gone') {
+      if (isHost) return;
+      R.resignSeat(state, d.seat);
+      board.render(state); updatePanel();
+      status(R.SEAT_NAMES[d.seat] + ' left the game.', 'err');
+      if (state.result) endGame(state.result);
       return;
     }
-    if (d.t === 'rematch' && !host) {
-      newGame(d.seed, d.guestSide);
-      status('New game. You are ' + R.SIDE_NAMES[d.guestSide] + '.', 'good');
+    if (d.t === 'resign') {
+      R.resignSeat(state, d.seat);
+      if (isHost) s.broadcast({ t: 'resign', seat: d.seat }, conn);
+      board.render(state); updatePanel();
+      if (state.result) endGame(state.result);
       return;
     }
-    if (d.t === 'bye') { if (session) session.close(); }
+    if (d.t === 'rematch' && !isHost) {
+      newGame({ size: 11, seats: gameOpts.seats, seed: d.seed, layouts: gameOpts.layouts }, mySeat);
+      return;
+    }
   }
 
   /* ================= board sizing ================= */
   function fitBoard() {
     var el = $('#board');
     if (!el) return;
-    var wrap = el.parentElement;
-    var avail = Math.min(wrap.clientWidth, root.innerHeight - 190);
-    var size = Math.max(260, Math.min(620, avail));
-    el.style.setProperty('--bs', size + 'px');
-    board.addCoords();
+    var avail = Math.min(el.parentElement.clientWidth, root.innerHeight - 190);
+    el.style.setProperty('--bs', Math.max(280, Math.min(680, avail)) + 'px');
+    if (board) board.addCoords();
+  }
+
+  /* ================= custom setup editor ================= */
+  var CYCLE = [R.T.SWORD, R.T.SCYTHE, R.T.BOW, R.T.ROD, R.T.SPEAR, R.T.TRIDENT, 0];
+
+  function buildEditor() {
+    var host = $('#editorGrid');
+    host.innerHTML = '';
+    ['back', 'front'].forEach(function (rank) {
+      var row = document.createElement('div');
+      row.className = 'editrow';
+      row.innerHTML = '<span class="editlabel">' + (rank === 'back' ? 'Back' : 'Front') + '</span>';
+      for (var k = 0; k < R.ARMY; k++) {
+        (function (k) {
+          var b = document.createElement('button');
+          b.className = 'slot';
+          b.onclick = function () {
+            var cur = customLayout[rank][k];
+            customLayout[rank][k] = CYCLE[(CYCLE.indexOf(cur) + 1) % CYCLE.length];
+            refreshEditor();
+          };
+          row.appendChild(b);
+        })(k);
+      }
+      host.appendChild(row);
+    });
+    refreshEditor();
+  }
+
+  function refreshEditor() {
+    var rows = $$('#editorGrid .editrow');
+    ['back', 'front'].forEach(function (rank, ri) {
+      var slots = rows[ri].querySelectorAll('.slot');
+      for (var k = 0; k < R.ARMY; k++) {
+        var t = customLayout[rank][k];
+        slots[k].innerHTML = t ? UI.glyph(t) : '';
+        slots[k].className = 'slot' + (t ? '' : ' empty');
+        slots[k].style.background = t ? customColors[R.SOUTH] : '';
+        slots[k].style.color = t ? board.ink(customColors[R.SOUTH]) : '';
+        slots[k].title = t ? R.NAMES[t] : 'Empty';
+      }
+    });
+    var valid = R.layoutValid(customLayout);
+    var count = 0;
+    ['back', 'front'].forEach(function (r) {
+      customLayout[r].forEach(function (t) { if (t) count++; });
+    });
+    $('#editorStatus').textContent = valid
+      ? count + ' pieces, one Trident. Ready.'
+      : 'Your army needs exactly one Trident.';
+    $('#editorStatus').className = 'status ' + (valid ? 'good' : 'err');
+    $('#openCustom').disabled = !valid;
   }
 
   /* ================= wiring ================= */
   function boot() {
     applyTheme();
-
     board = UI.createBoard($('#board'), {
       settings: settings,
-      onMove: function (mv) { play(mv, false); }
+      colors: colors,
+      onMove: function (mv) { requestMove(mv); },
+      onPlacingChange: function () { updatePanel(); }
     });
 
-    // --- reference content that is generated from the rules themselves ---
     buildPieceCards('#piececards');
     buildPieceCards('#piececards2');
 
-    // --- settings UI ---
+    // themes
     var tg = $('#themegrid');
     THEMES.forEach(function (t) {
       var b = document.createElement('button');
@@ -376,71 +532,97 @@
       save(); applyTheme(); location.reload();
     };
 
-    // --- lobby ---
-    $('#btnHost').onclick = function () {
-      if (session) session.close();
-      status('Opening a room' + '…', '');
-      showLobby('hosting');
-      $('#roomcode').textContent = '·····';
-      session = Net.host(handlers(true));
-    };
+    // arenas
+    $('#btnQuick2').onclick = function () { beginQuick('quick2'); };
+    $('#btnQuick4').onclick = function () { beginQuick('quick4'); };
+    $('#btnCustomSetup').onclick = function () { showLobby('custom'); buildEditor(); };
     $('#btnJoinForm').onclick = function () { showLobby('joining'); setTimeout(function () { $('#joinCode').focus(); }, 30); };
     $('#btnJoin').onclick = doJoin;
     $('#joinCode').addEventListener('keydown', function (e) { if (e.key === 'Enter') doJoin(); });
     $$('#lobby [data-back]').forEach(function (b) {
-      b.onclick = function () { if (session) { session.close(); session = null; } showLobby('choose'); };
+      b.onclick = function () { if (session) { session.close(); session = null; } mode = 'none'; showLobby('choose'); };
     });
+
+    function beginQuick(m) {
+      if (session) session.close();
+      mode = m; state = null; isHost = false;
+      showLobby('searching');
+      $('#searchLabel').textContent = m === 'quick4' ? 'Finding a four-player table' : 'Finding an opponent';
+      session = Net.quickMatch(seatsFor(m), netHandlers());
+    }
+    function doJoin() {
+      if (session) session.close();
+      mode = 'custom'; isHost = false; state = null;
+      status('Looking for the room…');
+      session = Net.join($('#joinCode').value, netHandlers());
+    }
+
+    // custom room
+    [R.SOUTH, R.NORTH].forEach(function (seat, i) {
+      var inp = $('#color' + i);
+      inp.value = customColors[seat];
+      inp.oninput = function () { customColors[seat] = inp.value; refreshEditor(); };
+    });
+    $('#resetLayout').onclick = function () {
+      customLayout = R.defaultLayout();
+      customColors = DEFAULT_COLORS.slice();
+      $('#color0').value = customColors[R.SOUTH];
+      $('#color1').value = customColors[R.NORTH];
+      refreshEditor();
+    };
+    $('#openCustom').onclick = function () {
+      if (session) session.close();
+      var lays = {};
+      lays[R.SOUTH] = { back: customLayout.back.slice(), front: customLayout.front.slice() };
+      lays[R.NORTH] = { back: customLayout.back.slice(), front: customLayout.front.slice() };
+      mode = 'custom';
+      showLobby('hosting');
+      $('#roomcode').textContent = '·····';
+      session = Net.host({ capacity: 1 }, netHandlers());
+      startAsHost('custom', { layouts: lays, colors: customColors.slice() });
+      showLobby('hosting');
+    };
     $('#copyCode').onclick = function () {
       var code = $('#roomcode').textContent;
       if (navigator.clipboard) {
-        navigator.clipboard.writeText(code).then(function () { status('Room code copied.', 'good'); },
-          function () { status('Could not copy — read it out instead.', ''); });
-      } else { status('Copy is unavailable here — read the code out instead.', ''); }
+        navigator.clipboard.writeText(code).then(
+          function () { status('Room code copied.', 'good'); },
+          function () { status('Could not copy — read it out instead.'); });
+      }
     };
 
-    function doJoin() {
-      var code = $('#joinCode').value;
-      if (session) session.close();
-      status('Looking for the room' + '…', '');
-      session = Net.join(code, handlers(false));
-    }
-
-    // Hot-seat exists for testing the rules on one screen; ?dev=1 reveals it.
+    // hot-seat, for testing the rules on one screen
     if (/[?&]dev=1/.test(location.search)) {
       $('#devrow').style.display = '';
-      $('#btnLocal').onclick = function () {
-        if (session) { session.close(); session = null; }
-        mode = 'local'; isHost = false;
-        showLobby('none');
-        newGame(Net.randomSeed(), null);
-        status('Hot-seat: both sides on this screen.', 'good');
-      };
+      $('#btnLocal2').onclick = function () { startLocal(2); };
+      $('#btnLocal4').onclick = function () { startLocal(4); };
+    }
+    function startLocal(n) {
+      if (session) { session.close(); session = null; }
+      mode = 'local'; isHost = false;
+      colors = DEFAULT_COLORS.slice();
+      showLobby('none');
+      newGame({ size: 11, seats: n, seed: Net.randomSeed() }, null);
+      status('Hot-seat: ' + n + ' seats on this screen.', 'good');
     }
 
-    // --- in-game controls ---
+    // in-game controls
+    $('#placeBarrier').onclick = function () { board.setPlacing(!board.placing); updatePanel(); };
+    $('#rotate').onclick = function () { board.rotate(); };
     $('#resign').onclick = function () {
       if (!state || state.result) return;
-      if (mode === 'online') {
-        session.send({ t: 'resign' });
-        state.result = { type: 'resign', winner: 1 - mySide };
-      } else {
-        state.result = { type: 'resign', winner: 1 - state.toMove };
-      }
-      endGame(state.result);
-    };
-    $('#flip').onclick = function () {
-      board.flipped = !board.flipped;
-      board.render(state);
-      board.addCoords();
+      var seat = mySeat === null ? state.toMove : mySeat;
+      if (mode !== 'local') session.broadcast ? session.broadcast({ t: 'resign', seat: seat }) : session.send({ t: 'resign', seat: seat });
+      R.resignSeat(state, seat);
+      board.render(state); updatePanel();
+      if (state.result) endGame(state.result);
     };
     $('#leave').onclick = leaveGame;
 
-    // --- routing + layout ---
     root.addEventListener('hashchange', route);
     root.addEventListener('resize', fitBoard);
     showLobby('choose');
     route();
-    fitBoard();
 
     if (!Net.available()) {
       status('The peer-to-peer library did not load, so online play is unavailable. Everything else works offline.', 'err');
@@ -453,15 +635,15 @@
     [R.T.BOW, 'Push', 'Slides any distance on a diagonal. Shoves the first enemy it reaches one square and takes its place.'],
     [R.T.ROD, 'Pull', 'Slides any distance orthogonally. Drags the first enemy on its line one square closer — and its scan reaches straight over holes.'],
     [R.T.SPEAR, 'Push', 'Steps one or two squares orthogonally. Strikes a target exactly two squares away, drives it two squares, and lunges into its place.'],
-    [R.T.TRIDENT, 'King', 'Slides up to three squares in any of eight directions. Pushes an adjacent enemy one or two squares, or pulls one from up to three squares. If it falls, you lose.']
+    [R.T.TRIDENT, 'King', 'Slides up to three squares in any of eight directions. Pushes an adjacent enemy one or two squares, or pulls one from up to three squares. If it falls, you are out.']
   ];
 
   function buildPieceCards(sel) {
     var host = $(sel);
     if (!host) return;
     host.innerHTML = PIECE_TEXT.map(function (p) {
-      return '<div class="piececard"><div class="ico">' + UI.glyph(p[0]) + '</div><div>' +
-        '<h3>' + R.NAMES[p[0]] + '<span class="tag">' + p[1] + '</span></h3>' +
+      return '<div class="piececard"><div class="ico" style="background:' + DEFAULT_COLORS[0] + '">' +
+        UI.glyph(p[0]) + '</div><div><h3>' + R.NAMES[p[0]] + '<span class="tag">' + p[1] + '</span></h3>' +
         '<p>' + p[2] + '</p></div></div>';
     }).join('');
   }
