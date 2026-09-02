@@ -6,33 +6,48 @@
   'use strict';
   var R = root.UT.Rules;
 
-  /* ---- piece glyphs (24x24, stroke-based, inherit currentColor) ---- */
+  /* ---- piece glyphs ----------------------------------------------------
+   * Drawn to be told apart at ~35px: every piece has a filled head with its
+   * own silhouette, so you read the shape rather than the thin outline.
+   *   Sword   blade + wide crossguard + round pommel
+   *   Scythe  angled handle + filled crescent
+   *   Bow     deep arc + string + arrow
+   *   Rod     straight staff + solid orb
+   *   Spear   shaft + diamond head + collar
+   *   Trident three barbed prongs on a crossbar
+   */
   var G = {};
   G[R.T.SWORD] =
-    '<path d="M12 2.5 14.2 6.5 14.2 13.5 9.8 13.5 9.8 6.5Z"/>' +
-    '<path d="M6.8 14.6h10.4"/><path d="M12 14.6v6.9"/><path d="M9.6 21.5h4.8"/>';
+    '<path fill="currentColor" stroke="none" d="M12 1.4 14.5 6.6V12.6H9.5V6.6Z"/>' +
+    '<path fill="currentColor" stroke="none" d="M6.2 12.6H17.8V15.1H6.2Z"/>' +
+    '<path fill="currentColor" stroke="none" d="M10.9 15.1H13.1V19.6H10.9Z"/>' +
+    '<circle cx="12" cy="21.1" r="1.9" fill="currentColor" stroke="none"/>';
   G[R.T.SCYTHE] =
-    '<path d="M8.4 21.5 14.6 4.6"/>' +
-    '<path d="M14.6 4.6C9.2 4.2 4.6 7.1 3.4 12.4"/>' +
-    '<path d="M14.6 4.6c-3.8 1.2-6.4 3.6-7.4 7.1"/>';
+    '<path d="M9.4 21.9 15.1 6.6" stroke-width="2.4"/>' +
+    '<path fill="currentColor" stroke="none" d="M15.8 5.1C8.7 4.7 3.4 8.1 2.3 13.9 5.2 9.4 9.7 7.1 15.8 8.6Z"/>' +
+    '<path d="M7.7 16.2 11.4 17.6" stroke-width="1.8"/>';
   G[R.T.BOW] =
-    '<path d="M8.2 2.8a11 11 0 0 1 0 18.4"/>' +
-    '<path d="M8.2 2.8v18.4"/>' +
-    '<path d="M5.6 12h12.8"/><path d="M15.2 8.8 18.4 12l-3.2 3.2"/>';
+    '<path d="M8.6 2.6a10.6 10.6 0 0 1 0 18.8" stroke-width="2.5"/>' +
+    '<path d="M8.6 2.6v18.8" stroke-width="1.3"/>' +
+    '<path d="M4.4 12h10.4" stroke-width="1.9"/>' +
+    '<path fill="currentColor" stroke="none" d="M14.2 8.8 20 12l-5.8 3.2Z"/>';
   G[R.T.ROD] =
-    '<path d="M7.2 21.5 13.6 7.4"/>' +
-    '<path d="M13.6 7.4a3.9 3.9 0 1 0-4.2-4.1"/>';
+    '<path d="M8.2 21.9 13.1 9.4" stroke-width="2.5"/>' +
+    '<circle cx="14.6" cy="5.9" r="3.7" fill="currentColor" stroke="none"/>' +
+    '<path d="M10.9 11.6 14.2 12.9" stroke-width="1.7"/>';
+  // Kept deliberately unlike the Sword: a long bare shaft and a tall narrow
+  // head, against the Sword's wide crossguard and round pommel.
   G[R.T.SPEAR] =
-    '<path d="M12 21.5V8.6"/>' +
-    '<path d="M12 2.2 15.6 9.2H8.4Z"/>' +
-    '<path d="M9.4 11.6h5.2"/>';
+    '<path d="M12 22.2V11.8" stroke-width="2.2"/>' +
+    '<path fill="currentColor" stroke="none" d="M12 0.9 15.2 8.4 12 13.4 8.8 8.4Z"/>';
   G[R.T.TRIDENT] =
-    '<path d="M12 21.5V10.4"/>' +
-    '<path d="M6 10.4V4.2"/><path d="M18 10.4V4.2"/><path d="M12 10.4V2.4"/>' +
-    '<path d="M6 10.4h12"/>';
+    '<path d="M12 22V12.6" stroke-width="2.6"/>' +
+    '<path d="M5.6 12.6h12.8" stroke-width="2.4"/>' +
+    '<path d="M5.6 12.6V7.6M12 12.6V6.4M18.4 12.6V7.6" stroke-width="2.2"/>' +
+    '<path fill="currentColor" stroke="none" d="M4.2 7.8 5.6 3.4 7 7.8ZM10.6 6.6 12 2.2 13.4 6.6ZM17 7.8 18.4 3.4 19.8 7.8Z"/>';
 
   function glyph(t) {
-    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" ' +
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" ' +
       'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + G[t] + '</svg>';
   }
 

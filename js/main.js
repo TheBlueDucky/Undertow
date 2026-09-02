@@ -17,7 +17,7 @@
     { id: 'moss', name: 'Moss', cols: ['#1d2f24', '#e0a13c', '#9d7fd6', '#050a07'] }
   ];
   var DEFAULT_COLORS = ['#e8913a', '#3fbf9f', '#8b6fd4', '#e8556a', '#6b7785'];
-  var DEFAULTS = { theme: 'abyss', animMs: 280, hints: true, danger: true, coords: true, sound: true };
+  var DEFAULTS = { theme: 'abyss', animMs: 280, hints: true, danger: true, coords: true, sound: true, turnSecs: 60 };
   var settings = load();
 
   function load() {
@@ -56,6 +56,9 @@
     fall: function () { tone(340, 42, 0.62, 'sawtooth', 0.08); },
     place: function () { tone(150, 220, 0.16, 'square', 0.06); },
     strike: function () { tone(660, 240, 0.13, 'square', 0.06); },
+    yourTurn: function () { tone(523, 0, 0.13, 'sine', 0.08); setTimeout(function () { tone(784, 0, 0.22, 'sine', 0.08); }, 120); },
+    lowTime: function () { tone(880, 660, 0.16, 'triangle', 0.07); },
+    timeout: function () { tone(300, 120, 0.45, 'sawtooth', 0.07); },
     win: function () { tone(392, 0, 0.18, 'sine', 0.09); setTimeout(function () { tone(587, 0, 0.4, 'sine', 0.09); }, 150); },
     lose: function () { tone(240, 90, 0.7, 'sine', 0.09); }
   };
@@ -127,12 +130,16 @@
       board.render(state);
       updatePanel();
       busy = false;
+      resetTurnClock();
+      announceTurn();
       if (state.result) endGame(state.result);
     });
   }
 
   function endGame(res) {
     board.locked = true;
+    stopClock();
+    paintClock();
     var title, sub;
     var name = function (s) { return s === null || s === undefined ? '—' : R.SEAT_NAMES[s]; };
     // seat count comes from the position, not the mode string (hot-seat 4P is 'local')
@@ -174,16 +181,94 @@
   function doRematch() {
     var opts = { size: 11, seats: state ? state.seats.length : seatsFor(mode),
                  seed: Net.randomSeed(), layouts: gameOpts.layouts };
-    if (mode === 'local') { newGame(opts, null); return; }
+    if (mode === 'local') { newGame(opts, null); resetTurnClock(); return; }
     session.broadcast({ t: 'rematch', seed: opts.seed });
     newGame(opts, mySeat);
+    lastTurnSeat = null; resetTurnClock(); announceTurn();
   }
 
   function leaveGame() {
     clearTimeout(startTimer);
+    stopClock();
     if (session) { session.close(); session = null; }
     mode = 'none'; state = null; seatOf = null;
+    clearChat();
+    refreshChatState();
     showLobby('choose');
+  }
+
+  /* ================= turn clock =================
+   * The host is the authority: only it may declare a timeout, and it tells
+   * everyone else. Guests run the same countdown for display only, so a slow
+   * connection can never make two players disagree about whose turn it is.
+   */
+  var clockTick = null, turnDeadline = 0, lowWarned = false, lastTurnSeat = null;
+
+  function turnSecs() {
+    var v = (gameOpts && gameOpts.turnSecs !== undefined) ? gameOpts.turnSecs : settings.turnSecs;
+    return Math.max(0, v | 0);
+  }
+  function secondsLeft() {
+    if (!turnDeadline || !state || state.result) return null;
+    return Math.max(0, Math.ceil((turnDeadline - Date.now()) / 1000));
+  }
+  function clockText() {
+    var left = secondsLeft();
+    return left === null ? '' : left + 's';
+  }
+  function stopClock() { clearInterval(clockTick); clockTick = null; turnDeadline = 0; }
+
+  function resetTurnClock() {
+    lowWarned = false;
+    var secs = turnSecs();
+    turnDeadline = (secs > 0 && state && !state.result && mode !== 'none') ? Date.now() + secs * 1000 : 0;
+    if (!clockTick && turnDeadline) clockTick = setInterval(tickClock, 250);
+    paintClock();
+  }
+
+  function paintClock() {
+    var el = $('#clock');
+    if (!el) return;
+    var left = secondsLeft();
+    el.textContent = left === null ? '' : left + 's';
+    el.className = 'clock' + (left !== null && left <= 10 ? ' low' : '');
+  }
+
+  function tickClock() {
+    if (!state || state.result || !turnDeadline) { paintClock(); return; }
+    var left = secondsLeft();
+    paintClock();
+    if (left <= 10 && !lowWarned && mySeat !== null && state.toMove === mySeat) {
+      lowWarned = true; Sound.lowTime();
+    }
+    if (left > 0) return;
+    if (mode === 'local' || isHost) declareTimeout();
+  }
+
+  function declareTimeout() {
+    if (!state || state.result || busy) return;
+    var seat = state.toMove;
+    if (mode !== 'local' && isHost) session.broadcast({ t: 'pass', seat: seat, ply: state.ply });
+    applyPass(seat);
+  }
+
+  function applyPass(seat) {
+    if (!state || state.result || state.toMove !== seat) return;
+    Sound.timeout();
+    sysChat(R.SEAT_NAMES[seat] + ' ran out of time and lost the turn.');
+    R.passTurn(state, seat);
+    board.render(state);
+    updatePanel();
+    resetTurnClock();
+    announceTurn();
+    if (state.result) endGame(state.result);
+  }
+
+  // Chime once, when the turn becomes yours.
+  function announceTurn() {
+    if (!state || state.result || mySeat === null) { lastTurnSeat = state ? state.toMove : null; return; }
+    if (state.toMove === mySeat && lastTurnSeat !== mySeat) Sound.yourTurn();
+    lastTurnSeat = state.toMove;
   }
 
   /* ================= panel ================= */
@@ -200,7 +285,7 @@
       '<span>' + esc(label) + '<small>' +
       (state.result ? 'Move ' + state.ply
         : (danger ? '<span class="warn">Trident can be taken this turn</span>' : who + ' · move ' + (state.ply + 1))) +
-      '</small></span>';
+      '</small></span><span class="clock" id="clock">' + clockText() + '</span>';
 
     var html = '';
     for (var s = 0; s < state.seats.length; s++) {
@@ -236,6 +321,78 @@
     });
   }
 
+  /* ================= chat =================
+   * Guests send text only. The host stamps the seat from the connection it
+   * arrived on, so nobody can speak as another player, and every message is
+   * inserted as text - never as markup.
+   */
+  var CHAT_MAX = 200, chatLastAt = {};
+
+  function cleanChat(t) {
+    // Strip control characters by code point - no regex escapes to get mangled.
+    var raw = String(t == null ? '' : t), out = '', i, code;
+    for (i = 0; i < raw.length; i++) {
+      code = raw.charCodeAt(i);
+      out += (code < 32 || code === 127) ? ' ' : raw.charAt(i);
+    }
+    return out.replace(/ +/g, ' ').trim().slice(0, CHAT_MAX);
+  }
+
+  function moveChat(slotSel) {
+    var c = $('#chat'), slot = $(slotSel);
+    if (c && slot && c.parentElement !== slot) slot.appendChild(c);
+  }
+
+  function chatAvailable() { return mode !== 'none' && mode !== 'local' && !!session; }
+
+  function refreshChatState() {
+    var c = $('#chat');
+    if (!c) return;
+    c.style.display = chatAvailable() ? '' : 'none';
+    $('#chatinput').disabled = !chatAvailable();
+    $('#chatsend').disabled = !chatAvailable();
+  }
+
+  function addChat(kind, seat, text) {
+    var box = $('#chatlog');
+    if (!box) return;
+    var empty = box.querySelector('.empty');
+    if (empty) empty.remove();
+    var line = document.createElement('div');
+    line.className = 'msg ' + kind;
+    if (kind === 'say') {
+      var who = document.createElement('b');
+      who.textContent = (R.SEAT_NAMES[seat] || 'Someone') + ':';
+      if (colors[seat]) who.style.color = colors[seat];
+      line.appendChild(who);
+      line.appendChild(document.createTextNode(' ' + text));   // text, never markup
+    } else {
+      line.textContent = text;
+    }
+    box.appendChild(line);
+    while (box.children.length > 200) box.removeChild(box.firstChild);
+    box.scrollTop = box.scrollHeight;
+  }
+  function sysChat(text) { addChat('sys', null, text); }
+
+  function clearChat() {
+    var box = $('#chatlog');
+    if (box) box.innerHTML = '<div class="empty">No messages yet.</div>';
+    chatLastAt = {};
+  }
+
+  function sendChat(raw) {
+    var text = cleanChat(raw);
+    if (!text || !chatAvailable()) return;
+    var seat = mySeat === null ? R.SOUTH : mySeat;
+    if (isHost) {
+      addChat('say', seat, text);
+      session.broadcast({ t: 'say', seat: seat, text: text });
+    } else {
+      session.send({ t: 'chat', text: text });   // wait for the host to echo it back
+    }
+  }
+
   /* ================= lobby ================= */
   var setArenaButtons = function () {};   // replaced during boot
   function showLobby(which) {
@@ -260,7 +417,12 @@
     if (session) session.started = true;
     showLobby('none');
     board.locked = false;
+    moveChat('#chatSlotGame');
+    refreshChatState();
     fitBoard();
+    lastTurnSeat = null;
+    resetTurnClock();
+    announceTurn();
     updatePanel();
   }
 
@@ -280,12 +442,15 @@
   function waitPanel(text) {
     showLobby('waiting');
     $('#waitLabel').textContent = text;
+    moveChat('#chatSlotWait');
+    refreshChatState();
   }
 
   function startAsHost(m, opts) {
     mode = m; isHost = true; seatOf = new Map();
     var seed = Net.randomSeed();
-    gameOpts = { size: 11, seats: seatsFor(m), seed: seed, layouts: opts && opts.layouts };
+    gameOpts = { size: 11, seats: seatsFor(m), seed: seed, layouts: opts && opts.layouts,
+                 turnSecs: settings.turnSecs };
     colors = (opts && opts.colors) || DEFAULT_COLORS.slice();
     newGame(gameOpts, R.SOUTH);
     board.locked = true;                       // nobody moves until the table fills
@@ -301,13 +466,14 @@
     seatOf.set(conn, seat);
     conn.send({
       t: 'init', v: 2, mode: mode, seed: gameOpts.seed, seats: seatsFor(mode),
-      yourSeat: seat, colors: colors,
+      yourSeat: seat, colors: colors, turnSecs: gameOpts.turnSecs,
       layouts: gameOpts.layouts ? encodeLayouts(gameOpts.layouts) : null
     });
     var need = seatsFor(mode) === 4 ? 3 : 1, total = seatsFor(mode);
     if (s.conns.length >= need) {
       s.broadcast({ t: 'start' });
       revealBoard();
+      sysChat('Everyone is here — game on.');
       status('Everyone is here. You are ' + R.SEAT_NAMES[R.SOUTH] + ' and move first.', 'good');
     } else {
       s.broadcast({ t: 'lobby', have: s.conns.length + 1, need: total });
@@ -356,6 +522,7 @@
           s.broadcast({ t: 'gone', seat: seat });
           board.render(state); updatePanel();
           status(R.SEAT_NAMES[seat] + ' disconnected.', 'err');
+          sysChat(R.SEAT_NAMES[seat] + ' disconnected.');
           if (state.result) endGame(state.result);
         } else {
           board.locked = true;
@@ -385,7 +552,8 @@
     if (d.t === 'init' && !isHost) {
       mode = d.mode; mySeat = d.yourSeat;
       colors = d.colors || DEFAULT_COLORS.slice();
-      gameOpts = { size: 11, seats: d.seats, seed: d.seed, layouts: decodeLayouts(d.layouts) };
+      gameOpts = { size: 11, seats: d.seats, seed: d.seed, layouts: decodeLayouts(d.layouts),
+                   turnSecs: d.turnSecs === undefined ? settings.turnSecs : d.turnSecs };
       newGame(gameOpts, d.yourSeat);
       board.locked = true;
       waitPanel('You are ' + R.SEAT_NAMES[d.yourSeat] + ' — waiting for the table to fill');
@@ -395,6 +563,7 @@
     }
     if (d.t === 'lobby' && !isHost) {
       waitPanel('Waiting — ' + d.have + ' of ' + d.need + ' players here');
+      sysChat(d.have + ' of ' + d.need + ' players here.');
       armStartTimeout();                 // progress means the table is alive
       return;
     }
@@ -407,6 +576,7 @@
     }
     if (d.t === 'start' && !isHost) {
       revealBoard();
+      sysChat('Everyone is here — game on.');
       status('Game on. You are ' + R.SEAT_NAMES[mySeat] + '.', 'good');
       return;
     }
@@ -440,12 +610,35 @@
       applyLocally(m2);
       return;
     }
+    if (d.t === 'chat' && isHost) {
+      var cseat = seatOf.get(conn);
+      if (cseat === undefined) return;                 // not a seated player
+      var ctext = cleanChat(d.text);
+      if (!ctext) return;
+      var now = Date.now();
+      if (now - (chatLastAt[cseat] || 0) < 400) return; // flood guard
+      chatLastAt[cseat] = now;
+      addChat('say', cseat, ctext);
+      s.broadcast({ t: 'say', seat: cseat, text: ctext });
+      return;
+    }
+    if (d.t === 'say') {
+      var stext = cleanChat(d.text);
+      if (stext) addChat('say', d.seat, stext);
+      return;
+    }
+    if (d.t === 'pass' && !isHost) {
+      if (!state || state.result || d.ply !== state.ply) return;
+      applyPass(d.seat);
+      return;
+    }
     if (d.t === 'reject' && !isHost) { busy = false; status('That move was rejected.', 'err'); return; }
     if (d.t === 'gone') {
       if (isHost) return;
       R.resignSeat(state, d.seat);
       board.render(state); updatePanel();
       status(R.SEAT_NAMES[d.seat] + ' left the game.', 'err');
+      sysChat(R.SEAT_NAMES[d.seat] + ' left the game.');
       if (state.result) endGame(state.result);
       return;
     }
@@ -457,7 +650,9 @@
       return;
     }
     if (d.t === 'rematch' && !isHost) {
-      newGame({ size: 11, seats: gameOpts.seats, seed: d.seed, layouts: gameOpts.layouts }, mySeat);
+      newGame({ size: 11, seats: gameOpts.seats, seed: d.seed, layouts: gameOpts.layouts,
+                turnSecs: gameOpts.turnSecs }, mySeat);
+      lastTurnSeat = null; resetTurnClock(); announceTurn();
       return;
     }
   }
@@ -559,6 +754,18 @@
       $('#speedVal').textContent = settings.animMs === 0 ? 'off' : settings.animMs + 'ms';
       save();
     };
+    var limit = $('#setLimit');
+    limit.value = String(settings.turnSecs);
+    if (limit.value === '') {            // stored value is not one of the options
+      limit.value = String(DEFAULTS.turnSecs);
+      settings.turnSecs = DEFAULTS.turnSecs;
+      save();
+    }
+    limit.onchange = function () {
+      settings.turnSecs = parseInt(limit.value, 10) || 0;
+      save();
+      if (state && mode === 'local' && gameOpts) { gameOpts.turnSecs = settings.turnSecs; resetTurnClock(); }
+    };
     [['setHints', 'hints'], ['setDanger', 'danger'], ['setCoords', 'coords'], ['setSound', 'sound']]
       .forEach(function (pair) {
         var el = $('#' + pair[0]);
@@ -648,7 +855,8 @@
       mode = 'local'; isHost = false;
       colors = DEFAULT_COLORS.slice();
       showLobby('none');
-      newGame({ size: 11, seats: n, seed: Net.randomSeed() }, null);
+      newGame({ size: 11, seats: n, seed: Net.randomSeed(), turnSecs: settings.turnSecs }, null);
+      resetTurnClock();
       status('Hot-seat: ' + n + ' seats on this screen.', 'good');
     }
 
@@ -664,6 +872,16 @@
       if (state.result) endGame(state.result);
     };
     $('#leave').onclick = leaveGame;
+
+    $('#chatform').addEventListener('submit', function (e) {
+      e.preventDefault();
+      var input = $('#chatinput');
+      sendChat(input.value);
+      input.value = '';
+      input.focus();
+    });
+    clearChat();
+    refreshChatState();
 
     root.addEventListener('hashchange', route);
     root.addEventListener('resize', fitBoard);

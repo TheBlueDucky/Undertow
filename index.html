@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Undertow</title>
 <meta name="description" content="Undertow — a two- or four-player abstract strategy game about pushing and pulling your opponents into the holes in the board.">
-<link rel="stylesheet" href="css/style.css?v=3">
+<link rel="stylesheet" href="css/style.css?v=5">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e8913a'/><circle cx='50' cy='50' r='20' fill='%2310161c'/></svg>">
 </head>
 <body>
@@ -56,6 +56,10 @@
       <div class="card">
         <h3 style="margin-top:0">Build your own army</h3>
         <p class="note">Custom rooms let you rearrange all fourteen pieces and pick your colours, then hand a friend the code.</p>
+      </div>
+      <div class="card">
+        <h3 style="margin-top:0">Talk while you play</h3>
+        <p class="note">Every online arena has chat built in, from the moment you start waiting for players — no second app to keep open.</p>
       </div>
       <div class="card">
         <h3 style="margin-top:0">Direct peer-to-peer</h3>
@@ -110,6 +114,7 @@
           <div class="card" style="text-align:center">
             <h2 style="margin-top:0" id="waitLabel">Waiting for an opponent</h2>
             <p class="note dots">The board is ready and will appear the moment everyone is here</p>
+            <div id="chatSlotWait"></div>
             <div class="btn-row" style="justify-content:center"><button data-back>Cancel</button></div>
           </div>
         </div>
@@ -175,6 +180,16 @@
           <div class="btn-row">
             <button id="resign">Resign</button>
             <button id="leave">Leave</button>
+          </div>
+          <div id="chatSlotGame">
+            <div class="chat" id="chat">
+              <div class="chatlog" id="chatlog"></div>
+              <form class="chatform" id="chatform" autocomplete="off">
+                <input type="text" id="chatinput" maxlength="200" placeholder="Say something…"
+                       autocomplete="off" spellcheck="true">
+                <button type="submit" id="chatsend">Send</button>
+              </form>
+            </div>
           </div>
           <p class="note" style="margin:0">A dot is a move, a ring is an attack, a red ring means something dies, an orange square is a barrier you can hit.</p>
         </aside>
@@ -270,6 +285,11 @@
     <h2>2. Turns</h2>
     <p>On your turn you take exactly one action: a <b>move</b> to an empty square, an <b>attack</b> on an enemy piece, a <b>strike</b> against an enemy barrier, or <b>placing your barrier</b>. Passing is not allowed. No piece may move onto, or slide through, a void, an occupied square or a barrier.</p>
 
+    <h2>2b. The move clock</h2>
+    <p>Each turn is capped at a time limit — one minute by default. Run out and you <b>forfeit that turn</b>: the board is untouched, you keep every piece, and play simply passes to the next player. You are not eliminated and you get your normal turn again next time round.</p>
+    <p>The limit is chosen in Settings, and in an online game the host's setting governs the table so everyone counts down together. Set it to "No limit" to switch the clock off. Because a forfeited turn leaves the position unchanged, two players idling in turn will repeat the position and the game will end by repetition — a game where nobody is present ends itself.</p>
+    <p class="note">The host is the only one that may declare a timeout, and it tells everyone else. Other players run the same countdown for display, so a slow connection can never make two people disagree about whose turn it is.</p>
+
     <h2>3. Voids</h2>
     <p>A void is a permanent hole. Any piece displaced onto a void is removed from the game. Voids never fill up. They block movement and push paths, but they do <b>not</b> block pull scans.</p>
 
@@ -311,13 +331,14 @@
       <li><b>Trident.</b> A player whose Trident is removed is out immediately. Their remaining pieces and barrier stay on the board as <b>neutral</b>: they never take a turn, but they still block, can still be pushed and pulled by anyone, and can still be dropped into holes. In the rare case where a single push removes the last two Tridents at once, the player who made that move loses.</li>
       <li><b>Last standing.</b> When only one player still has a Trident, they win.</li>
       <li><b>Repetition.</b> When the same position — the same pieces and barriers on the same squares with the same player to move — occurs for the third time, the game ends and the surviving player with the most pieces wins. An exact tie is a draw.</li>
+      <li><b>Running out of time.</b> Forfeits that turn only — never the game, and never a piece.</li>
       <li><b>No legal moves.</b> A player with no legal action on their turn is out. In a two-player game that ends it; with more players the game continues without them.</li>
       <li><b>Resignation and disconnection.</b> Both remove that player's Trident and follow the elimination rule above.</li>
     </ol>
 
     <h2>9. Notation</h2>
     <p>Moves are recorded as a piece letter, the origin square, a connector, and the target square. Because Sword, Scythe and Spear all begin with the same letter, the letters are <span class="mono">S</span>word, s<span class="mono">C</span>ythe, s<span class="mono">P</span>ear, <span class="mono">B</span>ow, <span class="mono">R</span>od, <span class="mono">T</span>rident.</p>
-    <p><span class="mono">-</span> is a quiet move, <span class="mono">&gt;</span> a push, <span class="mono">&lt;</span> a pull, <span class="mono">!</span> a barrier strike. A trailing digit is a push distance greater than one; each <span class="mono">*</span> is a piece that went into a void. Placing a barrier is <span class="mono">+</span> and the square.</p>
+    <p>A turn lost to the clock is recorded as <span class="mono">…</span>. <span class="mono">-</span> is a quiet move, <span class="mono">&gt;</span> a push, <span class="mono">&lt;</span> a pull, <span class="mono">!</span> a barrier strike. A trailing digit is a push distance greater than one; each <span class="mono">*</span> is a piece that went into a void. Placing a barrier is <span class="mono">+</span> and the square.</p>
     <p class="note">So <span class="mono">Rc3&lt;c5*</span> is a Rod pulling the piece on c5 into a hole, <span class="mono">Pc2&gt;c4 2**</span> is a Spear driving a pair two squares and losing both to the same void, <span class="mono">+f6</span> drops a barrier on f6, and <span class="mono">Sf4!f5(2)</span> hits a barrier down to two health.</p>
   </div>
 </section>
@@ -339,6 +360,15 @@
           <input type="range" id="setSpeed" min="0" max="600" step="20">
           <b class="mono" id="speedVal" style="min-width:5ch;text-align:right"></b>
         </span>
+      </label>
+      <label class="row">
+        <span>Time per move<small>Run out and you lose the turn. In an online game the host setting is used.</small></span>
+        <select id="setLimit">
+          <option value="0">No limit</option>
+          <option value="30">30 seconds</option>
+          <option value="60">60 seconds</option>
+          <option value="120">2 minutes</option>
+        </select>
       </label>
       <label class="row">
         <span>Show legal moves<small>Dots and rings on the squares a selected piece can reach.</small></span>
@@ -374,6 +404,10 @@
     <p>A waiting player can't simply play on the well-known name — releasing it later would kill the game, and holding it would block everyone else. So the waiter runs a throwaway beacon under that name alongside its own private connection. The beacon hands each arrival the private address and, once the table is full, shuts down and frees the name for the next group.</p>
     <p>It is honest about its limits: it works well when a handful of people are online and gets slower as more pile in, there's no queue or ordering, and a browser that dies leaves a stale name that others waste a few seconds on. Room codes are always there as the reliable path.</p>
 
+    <h2>Chat</h2>
+    <p>Every online arena has chat, available from the moment you start waiting for players and carried through into the game. Messages travel the same peer-to-peer path as moves — nothing is stored anywhere, and the log is gone when you leave.</p>
+    <p>Guests send only the text of a message. The host stamps the seat it arrived on, so nobody can post as another player, and every message is inserted into the page as text rather than markup, so a message containing HTML shows up as the characters you typed.</p>
+
     <h2>Nobody trusts anybody</h2>
     <p>The host is authoritative. Guests send an <i>intent</i> — a short reference to a move, never a board state — and the host regenerates the full list of legal moves for the current position and looks for a match before broadcasting the result. Every other player re-derives it the same way. A move that isn't in the list is rejected, so a modified client cannot force an illegal position.</p>
 
@@ -393,9 +427,9 @@
 </main>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/rules.js?v=3"></script>
-<script src="js/ui.js?v=3"></script>
-<script src="js/net.js?v=3"></script>
-<script src="js/main.js?v=3"></script>
+<script src="js/rules.js?v=5"></script>
+<script src="js/ui.js?v=5"></script>
+<script src="js/net.js?v=5"></script>
+<script src="js/main.js?v=5"></script>
 </body>
 </html>

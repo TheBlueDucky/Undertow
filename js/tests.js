@@ -346,6 +346,43 @@
     eq('equal material is a draw', st.result.winner, null);
   })();
 
+  /* ---- 7b. running out of time ----------------------------------------- */
+  lines.push('turn timeout');
+  (function () {
+    var st = pos([], kings({ c4: [S, T.SWORD], c9: [No, T.SWORD] }));
+    var before = st.board.slice();
+    R.passTurn(st, S);
+    eq('turn passes to the opponent', st.toMove, No);
+    eq('the board is untouched', String(st.board), String(before));
+    eq('ply advances', st.ply, 1);
+    eq('timeout is logged', st.log[0], '…');
+    ok('the player stays in the game', st.alive[S]);
+
+    // a pass out of turn must do nothing
+    var st2 = pos([], kings({ c4: [S, T.SWORD] }));
+    R.passTurn(st2, No);
+    eq('cannot pass for someone else', st2.toMove, S);
+    eq('nothing logged', st2.log.length, 0);
+  })();
+
+  (function () {
+    // four seats: a timeout skips exactly one player
+    var st = R.createState({ size: 11, seats: 4, seed: 21 });
+    R.passTurn(st, S);
+    eq('south times out, west is up', st.toMove, W);
+    R.passTurn(st, W);
+    eq('west times out, north is up', st.toMove, No);
+    eq('nobody was eliminated', R.aliveSeats(st).length, 4);
+  })();
+
+  (function () {
+    // both sides idling repeats the position and ends the game
+    var st = pos([], { a1: [S, T.TRIDENT], k11: [No, T.TRIDENT] });
+    for (var i = 0; i < 12 && !st.result; i++) R.passTurn(st, st.toMove);
+    ok('endless timeouts end the game', !!st.result);
+    eq('by repetition', st.result.type, 'repetition');
+  })();
+
   /* ---- 8. notation ----------------------------------------------------- */
   lines.push('notation');
   (function () {

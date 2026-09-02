@@ -565,6 +565,18 @@
     return -1;
   }
 
+  // Running out of time forfeits the turn only - the board is untouched and
+  // the seat stays in the game. Because only `toMove` changes, two players
+  // idling in turn will repeat the position and end the game by repetition.
+  function passTurn(st, seat) {
+    if (st.result || st.toMove !== seat) return st;
+    st.log.push('…');
+    st.toMove = nextSeat(st, seat);
+    st.ply++;
+    updateResult(st, seat);
+    return st;
+  }
+
   // Resigning (or dropping out of a four-player game) removes that seat's
   // Trident, which runs the normal elimination path: army goes neutral.
   function resignSeat(st, seat) {
@@ -627,7 +639,7 @@
     moveKey: moveKey, matchMove: matchMove, notate: notate,
     countPieces: countPieces, updateResult: updateResult, aliveSeats: aliveSeats,
     nextSeat: nextSeat, tridentInDanger: tridentInDanger, findTrident: findTrident,
-    resignSeat: resignSeat,
+    resignSeat: resignSeat, passTurn: passTurn,
     BACK_RANK: BACK_RANK, FRONT_RANK: FRONT_RANK
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -67,6 +67,31 @@ Script and stylesheet URLs carry a matching `?v=` query. Bump it in `index.html`
 and you will be debugging code that is no longer on disk. If the game ever behaves like an
 older version, hard-refresh (Ctrl+F5) once.
 
+## Chat
+
+Every online arena has chat, from the moment you start waiting for players through to the
+end of the game. It rides the same peer-to-peer path as moves; nothing is stored, and the
+log clears when you leave.
+
+Guests send only text. The host stamps the seat from the connection it arrived on, so a
+player cannot post as somebody else, and messages are inserted as text nodes rather than
+markup — a message containing HTML displays as the characters that were typed. Messages
+are capped at 200 characters, control characters are stripped, and the host ignores
+anything arriving faster than one message every 400ms.
+
+## The move clock
+
+Each turn is capped (one minute by default, configurable in Settings, or off). Running out
+forfeits **that turn only** — the board is untouched and the player stays in the game.
+
+Only the host may declare a timeout; it broadcasts the result and everyone else applies it.
+Guests run the same countdown purely for display, so latency can never make two clients
+disagree about whose turn it is. In an online game the host's setting governs the table and
+is sent in the handshake.
+
+Because a forfeited turn changes nothing but whose move it is, two players idling in turn
+repeat the position and the game ends by repetition — an abandoned game closes itself.
+
 ## Nobody trusts anybody
 
 The host is authoritative. Guests send an *intent* — a short reference to a move, never a
