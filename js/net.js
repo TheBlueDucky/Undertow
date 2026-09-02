@@ -20,7 +20,9 @@
 (function (root) {
   'use strict';
 
-  var PREFIX = 'undertow-v2-';
+  // Bumped when the handshake changes. Old clients must never share a beacon
+  // name with new ones - their seat accounting differs and the table deadlocks.
+  var PREFIX = 'undertow-v3-';
   var BEACON = { 2: PREFIX + 'NormalMatch', 4: PREFIX + 'NormalMatch4' };
   var ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
   var SEEK_TIMEOUT = 5000;
@@ -65,7 +67,7 @@
     this.closed = false;
     this.code = null;
     this.capacity = 1;
-    this.served = 0;
+    this.started = false;
   }
 
   Session.prototype.broadcast = function (obj, except) {
@@ -101,6 +103,9 @@
       if (isGuestOfMine) {
         if (s.conns.length >= s.capacity) { try { conn.send({ t: 'full' }); conn.close(); } catch (e) {} return; }
         s.conns.push(conn);
+        // The table is full only once real connections have landed. Retire the
+        // beacon here, never when an invitation is merely handed out.
+        if (s.conns.length >= s.capacity) s.dropBeacon();
         if (h.onGuest) h.onGuest(conn, s.conns.length, s);
       } else {
         s.conns.push(conn);
@@ -111,6 +116,8 @@
     conn.on('close', function () {
       var i = s.conns.indexOf(conn);
       if (i >= 0) s.conns.splice(i, 1);
+      // Someone left before kick-off: put the table back on the board.
+      if (!s.closed && !s.started && s.openBeacon && s.conns.length < s.capacity) s.openBeacon();
       if (!s.closed && h.onPeerGone) h.onPeerGone(conn, s);
     });
     conn.on('error', function () { /* surfaced via close */ });
@@ -241,7 +248,7 @@
 
     // Step 2a: nobody waiting - register the well-known name as a beacon.
     function becomeWaiter() {
-      if (done || s.closed) return;
+      if (done || s.closed || s.beacon) return;
       phase = 'waiting';
       var b;
       try { b = new root.Peer(name, { debug: 0 }); } catch (e) { setTimeout(seek, 300); return; }
@@ -252,23 +259,24 @@
         if (h.onStatus) h.onStatus(seats === 4 ? 'Waiting for three more players' : 'Waiting for an opponent');
         if (h.onWaiting) h.onWaiting(s);
       });
-      // Hand each arrival our private id, then get out of the way.
+      // Invite anyone while a real seat is still open. Over-inviting is safe:
+      // a latecomer is simply told the table is full and goes back to looking.
+      // Under-inviting is not - it strands the table forever.
       b.on('connection', function (c) {
         c.on('open', function () {
-          if (s.served >= capacity) { try { c.send({ t: 'full' }); c.close(); } catch (e) {} return; }
-          s.served++;
-          try { c.send({ t: 'go', host: peer.id, tab: TAB_ID }); } catch (e) {}
-          setTimeout(function () { try { c.close(); } catch (e) {} }, 800);
-          if (s.served >= capacity) s.dropBeacon();   // free the name for the next group
+          var full = s.conns.length >= s.capacity;
+          try { c.send(full ? { t: 'full' } : { t: 'go', host: peer.id, tab: TAB_ID }); } catch (e) {}
+          setTimeout(function () { try { c.close(); } catch (e) {} }, 1500);
         });
       });
       b.on('error', function (e) {
         // someone claimed the name a moment before us - go back to seeking
-        s.beacon = null; s.isHost = false;
-        if (e && e.type === 'unavailable-id') { setTimeout(seek, 200 + Math.random() * 400); return; }
+        s.beacon = null;
+        if (e && e.type === 'unavailable-id') { s.isHost = false; setTimeout(seek, 200 + Math.random() * 400); return; }
         if (h.onError) h.onError(describe(e), s);
       });
     }
+    s.openBeacon = becomeWaiter;
 
     // Step 2b: someone was waiting - connect to their private peer and play.
     function connectToHost(hostId) {

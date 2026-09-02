@@ -40,10 +40,32 @@ the game, and holding it would block everyone else. So the waiter runs a throwaw
 the private address and, once the table is full, shuts down and frees the name for the
 next group.
 
+Seats are counted by connections that actually landed, never by invitations handed out.
+That distinction matters: if a player is invited but never arrives — closed tab, blocked
+NAT — counting the invitation would burn a seat, and a four-player table could never
+reach four. Over-inviting is safe (a latecomer is told the table is full and goes back to
+looking); under-inviting deadlocks the table forever. If someone leaves before kick-off,
+the table re-lists itself.
+
+A guest that has been seated but never sees the game start gives up after 75 seconds and
+says so, rather than waiting forever.
+
 Honest limits: it works well when a handful of people are online and gets slower as more
 pile in, there is no queue or ordering, and a browser that dies leaves a stale name that
 others waste a few seconds timing out against. Room codes are always there as the
 reliable path.
+
+### Changing the handshake
+
+Peer names are prefixed with a protocol version (`undertow-v3-`). Bump `PREFIX` in
+`js/net.js` whenever the handshake changes, so old tabs still running the previous build
+can never share a beacon with new ones — mixed versions disagree about seat accounting and
+strand the table.
+
+Script and stylesheet URLs carry a matching `?v=` query. Bump it in `index.html` and
+`tests.html` alongside `PREFIX`, otherwise browsers keep serving the previous JavaScript
+and you will be debugging code that is no longer on disk. If the game ever behaves like an
+older version, hard-refresh (Ctrl+F5) once.
 
 ## Nobody trusts anybody
 

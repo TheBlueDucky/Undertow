@@ -180,6 +180,7 @@
   }
 
   function leaveGame() {
+    clearTimeout(startTimer);
     if (session) { session.close(); session = null; }
     mode = 'none'; state = null; seatOf = null;
     showLobby('choose');
@@ -255,10 +256,25 @@
   // Reveal the board only once the table is full. Showing a locked board that
   // says "Your move" is how you get a player clicking at nothing.
   function revealBoard() {
+    clearTimeout(startTimer);
+    if (session) session.started = true;
     showLobby('none');
     board.locked = false;
     fitBoard();
     updatePanel();
+  }
+
+  // A guest seated at a table that never fills would otherwise wait forever.
+  var startTimer = null;
+  function armStartTimeout() {
+    clearTimeout(startTimer);
+    startTimer = setTimeout(function () {
+      if (!session || (state && state.result) || (session && session.started)) return;
+      if (session) { session.close(); session = null; }
+      mode = 'none'; state = null;
+      showLobby('choose');
+      status('That table never filled up — the other players left before it could start. Try again.', 'err');
+    }, 75000);
   }
 
   function waitPanel(text) {
@@ -288,13 +304,14 @@
       yourSeat: seat, colors: colors,
       layouts: gameOpts.layouts ? encodeLayouts(gameOpts.layouts) : null
     });
-    var need = seatsFor(mode) === 4 ? 3 : 1;
+    var need = seatsFor(mode) === 4 ? 3 : 1, total = seatsFor(mode);
     if (s.conns.length >= need) {
       s.broadcast({ t: 'start' });
       revealBoard();
       status('Everyone is here. You are ' + R.SEAT_NAMES[R.SOUTH] + ' and move first.', 'good');
     } else {
-      waitPanel('Waiting — ' + s.conns.length + ' of ' + need + ' joined');
+      s.broadcast({ t: 'lobby', have: s.conns.length + 1, need: total });
+      waitPanel('Waiting — ' + (s.conns.length + 1) + ' of ' + total + ' players here');
     }
   }
 
@@ -372,7 +389,20 @@
       newGame(gameOpts, d.yourSeat);
       board.locked = true;
       waitPanel('You are ' + R.SEAT_NAMES[d.yourSeat] + ' — waiting for the table to fill');
+      armStartTimeout();
       if (s.matched) s.matched();
+      return;
+    }
+    if (d.t === 'lobby' && !isHost) {
+      waitPanel('Waiting — ' + d.have + ' of ' + d.need + ' players here');
+      armStartTimeout();                 // progress means the table is alive
+      return;
+    }
+    if (d.t === 'full' && !isHost) {
+      if (session) { session.close(); session = null; }
+      mode = 'none'; state = null;
+      showLobby('choose');
+      status('That table filled up just before you arrived. Try again.', 'err');
       return;
     }
     if (d.t === 'start' && !isHost) {
