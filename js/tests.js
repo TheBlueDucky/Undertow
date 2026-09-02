@@ -398,6 +398,22 @@
     eq('wrong-side move rejected', R.matchMove(st, 'move:115:104:0:'), null);
     var place = R.legalMoves(st).filter(function (m) { return m.kind === 'place'; })[0];
     ok('placement keys round-trip', !!R.matchMove(st, R.moveKey(place)));
+
+    // Every action kind has to survive the wire, since a peer only ever sends
+    // a key and the receiver regenerates the move from its own engine.
+    var kinds = { move: null, push: null, pull: null, place: null, strike: null };
+    var arena = pos([], kings({
+      c4: [S, T.SWORD], c5: [No, T.BOW],        // push
+      f4: [S, T.ROD], f8: [No, T.SWORD],        // pull
+      h4: [S, T.SWORD]                          // strike, against the barrier below
+    }), { h5: [No, 3] });
+    arena.barrierLeft[S] = 1;
+    R.legalMoves(arena, S).forEach(function (m) { if (kinds[m.kind] === null) kinds[m.kind] = m; });
+    Object.keys(kinds).forEach(function (k) {
+      ok(k + ' key round-trips over the wire',
+        !!kinds[k] && !!R.matchMove(arena, R.moveKey(kinds[k])),
+        kinds[k] ? 'generated but not matched' : 'no ' + k + ' generated');
+    });
   })();
 
   /* ---- 11. full-game fuzz ---------------------------------------------- */

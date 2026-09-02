@@ -236,13 +236,14 @@
   }
 
   /* ================= lobby ================= */
+  var setArenaButtons = function () {};   // replaced during boot
   function showLobby(which) {
     $('#lobby').style.display = which === 'none' ? 'none' : '';
     $('#gameview').style.display = which === 'none' ? '' : 'none';
     $$('#lobby [data-lob]').forEach(function (el) {
       el.style.display = el.dataset.lob === which ? '' : 'none';
     });
-    if (which === 'choose') status('');
+    if (which === 'choose') { status(''); setArenaButtons(true); }
   }
   function status(msg, kind) {
     var el = $('#netstatus');
@@ -251,15 +252,28 @@
   }
 
   /* ================= networking glue ================= */
+  // Reveal the board only once the table is full. Showing a locked board that
+  // says "Your move" is how you get a player clicking at nothing.
+  function revealBoard() {
+    showLobby('none');
+    board.locked = false;
+    fitBoard();
+    updatePanel();
+  }
+
+  function waitPanel(text) {
+    showLobby('waiting');
+    $('#waitLabel').textContent = text;
+  }
+
   function startAsHost(m, opts) {
     mode = m; isHost = true; seatOf = new Map();
     var seed = Net.randomSeed();
     gameOpts = { size: 11, seats: seatsFor(m), seed: seed, layouts: opts && opts.layouts };
     colors = (opts && opts.colors) || DEFAULT_COLORS.slice();
-    showLobby('none');
     newGame(gameOpts, R.SOUTH);
     board.locked = true;                       // nobody moves until the table fills
-    status(seatsFor(m) === 4 ? 'Waiting for three players to join…' : 'Waiting for an opponent…');
+    if (m !== 'custom') waitPanel(seatsFor(m) === 4 ? 'Waiting for three more players' : 'Waiting for an opponent');
   }
 
   function guestSeats(m) {
@@ -277,11 +291,10 @@
     var need = seatsFor(mode) === 4 ? 3 : 1;
     if (s.conns.length >= need) {
       s.broadcast({ t: 'start' });
-      board.locked = false;
-      status('Everyone is here. ' + R.SEAT_NAMES[R.SOUTH] + ' moves first.', 'good');
-      updatePanel();
+      revealBoard();
+      status('Everyone is here. You are ' + R.SEAT_NAMES[R.SOUTH] + ' and move first.', 'good');
     } else {
-      status('Waiting — ' + s.conns.length + ' of ' + need + ' joined…');
+      waitPanel('Waiting — ' + s.conns.length + ' of ' + need + ' joined');
     }
   }
 
@@ -356,17 +369,15 @@
       mode = d.mode; mySeat = d.yourSeat;
       colors = d.colors || DEFAULT_COLORS.slice();
       gameOpts = { size: 11, seats: d.seats, seed: d.seed, layouts: decodeLayouts(d.layouts) };
-      showLobby('none');
       newGame(gameOpts, d.yourSeat);
       board.locked = true;
-      status('You are ' + R.SEAT_NAMES[d.yourSeat] + '. Waiting for the table to fill…', 'good');
+      waitPanel('You are ' + R.SEAT_NAMES[d.yourSeat] + ' — waiting for the table to fill');
       if (s.matched) s.matched();
       return;
     }
     if (d.t === 'start' && !isHost) {
-      board.locked = false;
+      revealBoard();
       status('Game on. You are ' + R.SEAT_NAMES[mySeat] + '.', 'good');
-      updatePanel();
       return;
     }
     if (d.t === 'intent' && isHost) {
@@ -543,9 +554,14 @@
       b.onclick = function () { if (session) { session.close(); session = null; } mode = 'none'; showLobby('choose'); };
     });
 
+    setArenaButtons = function (on) {
+      ['#btnQuick2', '#btnQuick4', '#btnCustomSetup', '#btnJoinForm', '#openCustom', '#btnJoin']
+        .forEach(function (sel) { var b = $(sel); if (b) b.disabled = !on; });
+    }
     function beginQuick(m) {
       if (session) session.close();
       mode = m; state = null; isHost = false;
+      setArenaButtons(false);
       showLobby('searching');
       $('#searchLabel').textContent = m === 'quick4' ? 'Finding a four-player table' : 'Finding an opponent';
       session = Net.quickMatch(seatsFor(m), netHandlers());

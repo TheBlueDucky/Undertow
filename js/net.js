@@ -25,6 +25,9 @@
   var ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
   var SEEK_TIMEOUT = 5000;
   var JOIN_TIMEOUT = 20000;
+  // One id per page load. A beacon stamps it on the handshake so a tab can
+  // never be matched against its own beacon (e.g. two Quick Match clicks).
+  var TAB_ID = Math.random().toString(36).slice(2) + Date.now().toString(36);
 
   function fill(arr) {
     var c = root.crypto || root.msCrypto;
@@ -217,6 +220,11 @@
         if (d.t === 'go') {
           answered = true; clearTimeout(probeTimer);
           try { probe.close(); } catch (e) {}
+          // never match a tab against its own beacon
+          if (d.tab === TAB_ID || d.host === peer.id) {
+            if (h.onError) h.onError('You are already waiting for a game in this tab.', s);
+            return;
+          }
           connectToHost(d.host);
         } else if (d.t === 'full') {
           answered = true; clearTimeout(probeTimer);
@@ -249,7 +257,7 @@
         c.on('open', function () {
           if (s.served >= capacity) { try { c.send({ t: 'full' }); c.close(); } catch (e) {} return; }
           s.served++;
-          try { c.send({ t: 'go', host: peer.id }); } catch (e) {}
+          try { c.send({ t: 'go', host: peer.id, tab: TAB_ID }); } catch (e) {}
           setTimeout(function () { try { c.close(); } catch (e) {} }, 800);
           if (s.served >= capacity) s.dropBeacon();   // free the name for the next group
         });

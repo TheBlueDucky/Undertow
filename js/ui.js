@@ -264,9 +264,9 @@
       buildGrid();
       sel = -1; targets = {}; killChoice();
       if (api.placing && !api.canPlace()) api.placing = false;
-      if (api.placing) { setPlacing(true); return; }
-      paint();
       renderPieces();
+      if (api.placing) { setPlacing(true); return; }   // setPlacing repaints squares
+      paint();
     };
 
     api.setPerspective = function (seat) {
