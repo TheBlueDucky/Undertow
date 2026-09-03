@@ -453,6 +453,58 @@
     });
   })();
 
+  /* ---- 10b. the computer opponent --------------------------------------- */
+  lines.push('ai');
+  (function () {
+    var AI = root.UT && root.UT.AI;
+    if (!AI) { ok('ai module present', false, 'UT.AI missing'); return; }
+    ok('ai module present', true);
+
+    // it must return one of the engine's own legal moves, never something else
+    var st = R.createState({ size: 11, seats: 2, seed: 4242 });
+    var legal = {}, ms = R.legalMoves(st), i;
+    for (i = 0; i < ms.length; i++) legal[R.moveKey(ms[i])] = 1;
+    var pick = AI.chooseMove(st, { level: 'easy' });
+    ok('returns a legal move', !!pick && !!legal[R.moveKey(pick)]);
+
+    // a free win must be taken: the Rod drags the enemy Trident over the hole
+    var win = pos(['c4'], { c3: [S, T.ROD], c5: [No, T.TRIDENT], a1: [S, T.TRIDENT], k11: [No, T.SWORD] });
+    var mv = AI.chooseMove(win, { level: 'hard' });
+    ok('takes an available win', !!mv && mv.kind === 'pull' && mv.to === sq('c5'));
+    R.applyMove(win, mv);
+    ok('and the win actually lands', !!win.result && win.result.winner === S);
+
+    // it must not walk its own Trident into something takeable
+    var risky = pos(['f6'], { f4: [S, T.TRIDENT], h6: [No, T.ROD], k11: [No, T.TRIDENT], a1: [S, T.SWORD] });
+    var safe = AI.chooseMove(risky, { level: 'hard' });
+    var after = R.cloneState(risky);
+    R.applyMove(after, safe);
+    ok('does not hang its own Trident', !R.tridentInDanger(after, S));
+
+    // the time budget has to be honoured, or a turn would stall the page
+    var slow = R.createState({ size: 11, seats: 4, seed: 99 });
+    var t0 = Date.now();
+    AI.chooseMove(slow, { level: 'hard' });
+    var spent = Date.now() - t0;
+    ok('respects its thinking budget', spent < 2500, spent + 'ms');
+
+    // every level plays a full game without ever producing an illegal move
+    var bad = 0, finished = 0;
+    ['easy', 'normal'].forEach(function (lv) {
+      var g = R.createState({ size: 11, seats: 2, seed: 7 });
+      var rnd = R.mulberry32(3);
+      for (var p = 0; p < 120 && !g.result; p++) {
+        var legalNow = {}, all = R.legalMoves(g), k;
+        for (k = 0; k < all.length; k++) legalNow[R.moveKey(all[k])] = 1;
+        var m = AI.chooseMove(g, { level: lv, rnd: rnd });
+        if (!m || !legalNow[R.moveKey(m)]) { bad++; break; }
+        R.applyMove(g, m);
+      }
+      if (g.result) finished++;
+    });
+    eq('never plays an illegal move over a whole game', bad, 0);
+  })();
+
   /* ---- 11. full-game fuzz ---------------------------------------------- */
   lines.push('fuzz');
   // Two models. Pure random is a crash test - on an 11x11 board it wanders and

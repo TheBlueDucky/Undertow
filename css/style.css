@@ -438,6 +438,16 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
   font-family: ui-monospace, Consolas, monospace;
 }
 
+/* ---------- local seat setup ---------- */
+.seatpick.on { border-color: var(--accent); background: var(--bg); }
+.seatrow {
+  display: flex; align-items: center; gap: .7rem;
+  padding: .5rem 0; border-bottom: 1px solid var(--line);
+}
+.seatrow .dotc { width: 15px; height: 15px; border-radius: 50%; flex: none; }
+.seatrow .who { flex: 1; font-weight: 600; }
+.seatrow select { min-width: 11rem; }
+
 /* ---------- custom setup editor ---------- */
 .editrow { display: flex; align-items: center; gap: .35rem; margin-bottom: .45rem; }
 .editlabel {

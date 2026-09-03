@@ -421,9 +421,26 @@
 
   /* ---- applying moves --------------------------------------------------- */
 
+  // A search clone. `voids` and `seats` never change, so they are shared.
+  // `quiet` states skip notation and repetition bookkeeping - both are pure
+  // overhead inside a search tree.
+  function cloneState(st) {
+    return {
+      N: st.N, seats: st.seats, voids: st.voids,
+      board: new Int8Array(st.board),
+      barrierHp: new Uint8Array(st.barrierHp),
+      barrierOwner: new Int8Array(st.barrierOwner),
+      barrierLeft: st.barrierLeft.slice(),
+      alive: st.alive.slice(),
+      toMove: st.toMove, ply: st.ply, seed: st.seed,
+      log: st.log, repetition: {}, result: st.result,
+      quiet: true
+    };
+  }
+
   function applyMove(st, mv) {
     var b = st.board, i, mover = st.toMove;
-    var note = notate(st, mv);
+    var note = st.quiet ? '' : notate(st, mv);
 
     if (mv.kind === 'place') {
       st.barrierHp[mv.to] = BARRIER_HP;
@@ -443,7 +460,7 @@
       if (mv.kind === 'push') { b[mv.to] = b[mv.from]; b[mv.from] = 0; }
     }
 
-    st.log.push(note);
+    if (!st.quiet) st.log.push(note);
     eliminate(st);
     st.toMove = nextSeat(st, mover);
     st.ply++;
@@ -631,7 +648,7 @@
     owner: owner, type: type, mk: mk,
     mulberry32: mulberry32, generateVoids: generateVoids, voidOrbits: voidOrbits,
     isConnected: isConnected, coreRadius: coreRadius,
-    createState: createState, hashState: hashState, homeSquare: homeSquare,
+    createState: createState, cloneState: cloneState, hashState: hashState, homeSquare: homeSquare,
     defaultLayout: defaultLayout, encodeLayout: encodeLayout, decodeLayout: decodeLayout,
     layoutValid: layoutValid,
     resolvePush: resolvePush, resolvePull: resolvePull,

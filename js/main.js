@@ -17,7 +17,8 @@
     { id: 'moss', name: 'Moss', cols: ['#1d2f24', '#e0a13c', '#9d7fd6', '#050a07'] }
   ];
   var DEFAULT_COLORS = ['#e8913a', '#3fbf9f', '#8b6fd4', '#e8556a', '#6b7785'];
-  var DEFAULTS = { theme: 'abyss', animMs: 280, hints: true, danger: true, coords: true, sound: true, turnSecs: 60 };
+  var DEFAULTS = { theme: 'abyss', animMs: 280, hints: true, danger: true, coords: true,
+                 sound: true, turnSecs: 60, autoRotate: true };
   var settings = load();
 
   function load() {
@@ -84,6 +85,53 @@
 
   function seatsFor(m) { return m === 'quick4' ? 4 : 2; }
 
+  /* ================= local play =================
+   * Every seat lives on this device. A seat is either a person passing the
+   * phone along or the computer; `localSeats` says which, indexed by seat.
+   */
+  var localCount = 2;
+  var localSeats = { 0: 'human', 1: 'ai:normal', 2: 'ai:normal', 3: 'ai:normal' };
+  var aiTimer = null;
+
+  function seatOrder(n) { return n === 4 ? [R.SOUTH, R.WEST, R.NORTH, R.EAST] : [R.SOUTH, R.NORTH]; }
+  function isAiSeat(seat) {
+    return mode === 'local' && String(localSeats[seat] || '').indexOf('ai:') === 0;
+  }
+  function aiLevel(seat) { return String(localSeats[seat] || 'ai:normal').split(':')[1] || 'normal'; }
+  function anyHumanSeat() {
+    var order = seatOrder(localCount);
+    for (var i = 0; i < order.length; i++) if (!isAiSeat(order[i])) return true;
+    return false;
+  }
+
+  // In a local game the board turns to face whoever is about to move, so the
+  // person holding the phone is always looking at their own side.
+  function faceCurrentPlayer() {
+    if (mode !== 'local' || !state || state.result) return;
+    if (!settings.autoRotate) return;
+    if (isAiSeat(state.toMove)) return;                 // do not spin for the computer
+    if (board.viewSeat !== state.toMove) board.setPerspective(state.toMove);
+  }
+
+  function stopAi() { clearTimeout(aiTimer); aiTimer = null; }
+
+  function maybeAiMove() {
+    stopAi();
+    if (mode !== 'local' || !state || state.result || busy) return;
+    if (!isAiSeat(state.toMove)) return;
+    var seat = state.toMove, level = aiLevel(seat);
+    // a beat before moving, so a human can see what just happened
+    aiTimer = setTimeout(function () {
+      if (mode !== 'local' || !state || state.result) return;
+      if (state.toMove !== seat) return;
+      var mv = null;
+      try { mv = UT.AI.chooseMove(state, { level: level }); } catch (e) { mv = null; }
+      if (!mv) { var ms = R.legalMoves(state, seat); mv = ms[0]; }
+      if (mv) commitMove(mv);
+    }, Math.max(220, settings.animMs));
+  }
+
+
   function newGame(opts, seat) {
     gameOpts = opts;
     state = R.createState(opts);
@@ -132,12 +180,15 @@
       busy = false;
       resetTurnClock();
       announceTurn();
-      if (state.result) endGame(state.result);
+      if (state.result) { endGame(state.result); return; }
+      faceCurrentPlayer();
+      maybeAiMove();
     });
   }
 
   function endGame(res) {
     board.locked = true;
+    stopAi();
     stopClock();
     paintClock();
     var title, sub;
@@ -190,6 +241,7 @@
   function leaveGame() {
     clearTimeout(startTimer);
     stopClock();
+    stopAi();
     if (session) { session.close(); session = null; }
     mode = 'none'; state = null; seatOf = null;
     clearChat();
@@ -261,7 +313,9 @@
     updatePanel();
     resetTurnClock();
     announceTurn();
-    if (state.result) endGame(state.result);
+    if (state.result) { endGame(state.result); return; }
+    faceCurrentPlayer();
+    maybeAiMove();
   }
 
   // Chime once, when the turn becomes yours.
@@ -407,6 +461,29 @@
     var el = $('#netstatus');
     el.textContent = msg || '';
     el.className = 'status' + (kind ? ' ' + kind : '');
+  }
+
+  function buildSeatList() {
+    var host = $('#seatList');
+    host.innerHTML = '';
+    var order = seatOrder(localCount);
+    order.forEach(function (seat) {
+      var row = document.createElement('div');
+      row.className = 'seatrow';
+      var opts = '<option value="human">Person</option>' +
+        '<option value="ai:easy">Computer · Easy</option>' +
+        '<option value="ai:normal">Computer · Normal</option>' +
+        '<option value="ai:hard">Computer · Hard</option>';
+      row.innerHTML = '<span class="dotc" style="background:' + DEFAULT_COLORS[seat] + '"></span>' +
+        '<span class="who">' + R.SEAT_NAMES[seat] + '</span>' +
+        '<select data-seat="' + seat + '">' + opts + '</select>';
+      var sel = row.querySelector('select');
+      sel.value = localSeats[seat];
+      sel.onchange = function () { localSeats[seat] = sel.value; };
+      host.appendChild(row);
+    });
+    $('#localSeats2').classList.toggle('on', localCount === 2);
+    $('#localSeats4').classList.toggle('on', localCount === 4);
   }
 
   /* ================= networking glue ================= */
@@ -844,21 +921,37 @@
       }
     };
 
-    // hot-seat, for testing the rules on one screen
-    if (/[?&]dev=1/.test(location.search)) {
-      $('#devrow').style.display = '';
-      $('#btnLocal2').onclick = function () { startLocal(2); };
-      $('#btnLocal4').onclick = function () { startLocal(4); };
-    }
+    $('#btnLocalSetup').onclick = function () { showLobby('local'); buildSeatList(); };
+    $('#localSeats2').onclick = function () { localCount = 2; buildSeatList(); };
+    $('#localSeats4').onclick = function () { localCount = 4; buildSeatList(); };
+    $('#setAutoRotate').checked = !!settings.autoRotate;
+    $('#setAutoRotate').onchange = function () {
+      settings.autoRotate = $('#setAutoRotate').checked; save();
+    };
+    $('#startLocal').onclick = function () { startLocal(localCount); };
+
     function startLocal(n) {
       if (session) { session.close(); session = null; }
       mode = 'local'; isHost = false;
       colors = DEFAULT_COLORS.slice();
       showLobby('none');
+      // With nobody human, watch from Amber's side; otherwise start on the
+      // first human seat so the phone is already the right way up.
+      var order = seatOrder(n), viewer = order[0];
+      for (var i = 0; i < order.length; i++) { if (!isAiSeatCfg(order[i])) { viewer = order[i]; break; } }
       newGame({ size: 11, seats: n, seed: Net.randomSeed(), turnSecs: settings.turnSecs }, null);
+      board.setPerspective(viewer);
+      board.locked = false;
       resetTurnClock();
-      status('Hot-seat: ' + n + ' seats on this screen.', 'good');
+      refreshChatState();
+      var humans = 0;
+      order.forEach(function (st2) { if (!isAiSeatCfg(st2)) humans++; });
+      status(humans === order.length
+        ? 'Pass the device around — ' + order.length + ' players.'
+        : humans + ' of ' + order.length + ' seats are people; the rest are the computer.', 'good');
+      maybeAiMove();
     }
+    function isAiSeatCfg(seat) { return String(localSeats[seat] || '').indexOf('ai:') === 0; }
 
     // in-game controls
     $('#placeBarrier').onclick = function () { board.setPlacing(!board.placing); updatePanel(); };

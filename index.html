@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Undertow</title>
 <meta name="description" content="Undertow — a two- or four-player abstract strategy game about pushing and pulling your opponents into the holes in the board.">
-<link rel="stylesheet" href="css/style.css?v=5">
+<link rel="stylesheet" href="css/style.css?v=6">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='46' fill='%23e8913a'/><circle cx='50' cy='50' r='20' fill='%2310161c'/></svg>">
 </head>
 <body>
@@ -58,6 +58,10 @@
         <p class="note">Custom rooms let you rearrange all fourteen pieces and pick your colours, then hand a friend the code.</p>
       </div>
       <div class="card">
+        <h3 style="margin-top:0">Play anywhere, with anyone</h3>
+        <p class="note">Pass one phone around, or take on the computer at three strengths. The board turns to face whoever is up, and empty chairs in a four-way game can be filled by the machine.</p>
+      </div>
+      <div class="card">
         <h3 style="margin-top:0">Talk while you play</h3>
         <p class="note">Every online arena has chat built in, from the moment you start waiting for players — no second app to keep open.</p>
       </div>
@@ -93,12 +97,11 @@
               <button id="btnCustomSetup">Custom room</button>
               <button id="btnJoinForm">Join with a code</button>
             </div>
-            <p class="note">Build your own army and colours, then share the room code.</p>
-            <div class="btn-row" id="devrow" style="display:none;margin-top:1rem;border-top:1px solid var(--line);padding-top:1rem">
-              <button id="btnLocal2">Hot-seat 2P</button>
-              <button id="btnLocal4">Hot-seat 4P</button>
-              <span class="note">All seats on this screen — for testing.</span>
+            <p class="note" style="margin-bottom:1.2rem">Build your own army and colours, then share the room code.</p>
+            <div class="btn-row" style="margin-bottom:.8rem">
+              <button id="btnLocalSetup">Play on this device</button>
             </div>
+            <p class="note">Pass one phone around, or take on the computer. No connection needed.</p>
           </div>
         </div>
 
@@ -116,6 +119,26 @@
             <p class="note dots">The board is ready and will appear the moment everyone is here</p>
             <div id="chatSlotWait"></div>
             <div class="btn-row" style="justify-content:center"><button data-back>Cancel</button></div>
+          </div>
+        </div>
+
+        <div data-lob="local" style="display:none">
+          <div class="card">
+            <h2 style="margin-top:0">Play on this device</h2>
+            <p class="note">Everyone shares this screen. Set any seat to the computer to play against it, or to fill a chair nobody wants.</p>
+            <div class="btn-row" style="margin:.8rem 0">
+              <button id="localSeats2" class="seatpick">2 players</button>
+              <button id="localSeats4" class="seatpick">4 players</button>
+            </div>
+            <div id="seatList"></div>
+            <label class="row" style="border-top:1px solid var(--line);margin-top:.6rem">
+              <span>Turn the board to face the current player<small>Best when passing one phone between people.</small></span>
+              <input type="checkbox" id="setAutoRotate">
+            </label>
+            <div class="btn-row" style="margin-top:1rem">
+              <button class="primary" id="startLocal">Start game</button>
+              <button data-back>Back</button>
+            </div>
           </div>
         </div>
 
@@ -427,9 +450,10 @@
 </main>
 
 <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
-<script src="js/rules.js?v=5"></script>
-<script src="js/ui.js?v=5"></script>
-<script src="js/net.js?v=5"></script>
-<script src="js/main.js?v=5"></script>
+<script src="js/rules.js?v=6"></script>
+<script src="js/ai.js?v=6"></script>
+<script src="js/ui.js?v=6"></script>
+<script src="js/net.js?v=6"></script>
+<script src="js/main.js?v=6"></script>
 </body>
 </html>

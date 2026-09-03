@@ -99,10 +99,67 @@ board state — and the host regenerates the full list of legal moves for the cu
 position and looks for a match before broadcasting the result. Every other player
 re-derives it the same way, so a modified client cannot force an illegal position.
 
-## Hot-seat
+## Play on this device
 
-Add `?dev=1` to the URL for *Hot-seat 2P* and *Hot-seat 4P* buttons that put every seat on
-one screen. They exist for testing the rules without four machines.
+A first-class arena, not a debug flag. Choose two or four seats and set each one to a
+person or to the computer, so the same screen covers pass-and-play, solo practice, and a
+four-way game where only two people showed up.
+
+With *turn the board to face the current player* on (the default), the board rotates so
+whoever is about to move is always looking at their own side — which is what makes passing
+one phone around actually work. It deliberately does not rotate for computer seats.
+
+## The computer opponent
+
+`js/ai.js` — minimax with alpha-beta and iterative deepening, scored from one seat's point
+of view so the same code serves two players and four. With four it is *paranoid*: every
+other seat is assumed to be against you. Pessimistic, but stable, unlike maxn.
+
+It runs on the main thread on purpose. A Web Worker cannot be created from a `file://`
+page, and this game has to keep working when you double-click `index.html` — so instead of
+a worker there is a wall-clock budget per move (60ms / 250ms / 600ms by level) and a pass
+that runs out of time is discarded rather than half-used.
+
+Measured on this board: branching is 45 moves in two-player and 31 in four-player, at
+~230k nodes/sec. Move ordering does the heavy lifting — kills first, then attacks, then
+quiet moves toward the centre, with barrier placement last because it alone contributes
+~89 legal moves in the early game and is rarely the best try.
+
+| Level | Depth (2P / 4P) | Budget | Behaviour |
+|---|---|---|---|
+| Easy | 1 / 1 | 60ms | 35% of the time plays a random move — but never one that drops its own Trident |
+| Normal | 3 / 2 | 250ms | Occasional slip |
+| Hard | 5 / 4 | 600ms | No deliberate mistakes |
+
+Verified by matches: easy beats random 11-0, normal beats easy 7-0.
+
+## What self-play says about balance so far
+
+**No first-player advantage is visible.** Twenty even games at easy finished 7-9 to the
+second player — noise at that sample size. Nothing to fix.
+
+**The open question: games stop finishing as play improves.**
+
+| Matchup | Finished | Unfinished (400-ply cap) |
+|---|---|---|
+| easy vs easy, 20 games | 16 | 4 (20%) |
+| normal vs normal, 8 games | 2 | 6 (75%) |
+| hard vs normal, 4 games | 0 | 4 (100%) |
+
+Monotonic across three points, so it is a real effect rather than a fluke of one matchup.
+What it *means* is still open, because there is a confound that predicts exactly this
+curve: all three levels share one evaluation function, and that function penalises
+standing next to a void. A deeper search is simply better at obeying it, so stronger
+players avoid holes more effectively and nothing ever dies. "The game is drawish at depth"
+and "the evaluation is too cowardly" both produce this table.
+
+The experiment that separates them is to add a term rewarding *threat* — forcing an
+opponent into a position where every reply is worse — rather than only rewarding personal
+safety, then re-run the same ladder. If games start finishing, the evaluation was the
+problem. If they still do not, the rules need a look: a whole-game move cap, more holes,
+or holes that migrate.
+
+No rule should change on the strength of this table alone.
 
 ## Layout
 
@@ -111,9 +168,10 @@ one screen. They exist for testing the rules without four machines.
 | `index.html` | The whole site: home, play, how-to-play, rules, settings, about |
 | `css/style.css` | All styling, including the five themes |
 | `js/rules.js` | The rule engine — pure, DOM-free, deterministic, depends on nothing |
+| `js/ai.js` | The computer opponent - pure, depends only on the rule engine |
 | `js/ui.js` | Board rendering, piece glyphs, barriers, per-seat rotation, animation |
 | `js/net.js` | Peer-to-peer transport, beacon matchmaking, host-authoritative star |
-| `js/main.js` | Routing, settings, sound, the three arenas, the setup editor |
+| `js/main.js` | Routing, settings, sound, the arenas, local seats, the setup editor |
 | `js/tests.js` | Rule engine test suite |
 | `tests.html` | Runs the suite in a browser |
 | `run-tests.js` | Runs the same suite in node |
@@ -130,7 +188,8 @@ node run-tests.js
 Or open `tests.html`. The suite covers board setup for both seat counts, void symmetry
 across 400 seeds, push chains, wall blocks, three-deep stacks, the pull-across-a-hole
 case, every barrier interaction, four-player elimination and neutral armies, all the
-endings, notation, custom layouts, network move validation, and four fuzz runs.
+endings, notation, custom layouts, network move validation, the turn clock, the
+computer opponent, and four fuzz runs.
 
 Two of those fuzz runs use a purely random player and two use a player that takes an
 offered kill 85% of the time. That distinction matters: on an 11×11 board a purely random
