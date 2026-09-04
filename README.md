@@ -67,6 +67,24 @@ Script and stylesheet URLs carry a matching `?v=` query. Bump it in `index.html`
 and you will be debugging code that is no longer on disk. If the game ever behaves like an
 older version, hard-refresh (Ctrl+F5) once.
 
+## Names
+
+Set a name in Settings and it is kept in this browser's local storage — nowhere else. The
+default is *Player*; blanking the field falls back to it rather than showing an empty
+label. Names are capped at 16 characters with control characters stripped, and are
+rendered as text, never markup.
+
+`SEAT_NAMES` in the rule engine (Amber, Jade, Violet, Coral) still names the **colour**.
+The name you set identifies the **person in that chair**. Both are shown together
+everywhere — turn bar, tally, chat — because nothing stops two players choosing the same
+name, and the colour beside it is what tells them apart.
+
+Online, a guest sends its name the moment it connects and the host keeps the roster and
+broadcasts it, so everyone at the table sees the same list. In a local game each human
+chair gets its own name box in the setup panel, prefilled with your saved name for the
+first chair and *Player 2*, *Player 3*… for the rest; computer chairs are simply
+*Computer*.
+
 ## Chat
 
 Every online arena has chat, from the moment you start waiting for players through to the

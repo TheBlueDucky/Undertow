@@ -18,7 +18,7 @@
   ];
   var DEFAULT_COLORS = ['#e8913a', '#3fbf9f', '#8b6fd4', '#e8556a', '#6b7785'];
   var DEFAULTS = { theme: 'abyss', animMs: 280, hints: true, danger: true, coords: true,
-                 sound: true, turnSecs: 60, autoRotate: true };
+                 sound: true, turnSecs: 60, autoRotate: true, playerName: 'Player' };
   var settings = load();
 
   function load() {
@@ -85,12 +85,42 @@
 
   function seatsFor(m) { return m === 'quick4' ? 4 : 2; }
 
+  /* ================= who is who =================
+   * R.SEAT_NAMES stays the name of the COLOUR (Amber, Jade, Violet, Coral).
+   * seatNames holds the name of the PERSON in that chair for this game.
+   * Two people can pick the same name - the colour chip beside it is what
+   * keeps them apart, which is why every name is rendered next to its colour.
+   */
+  var seatNames = {};
+  var NAME_MAX = 16;
+
+  function cleanName(t) {
+    var raw = String(t == null ? '' : t), out = '', i, code;
+    for (i = 0; i < raw.length; i++) {
+      code = raw.charCodeAt(i);
+      out += (code < 32 || code === 127) ? ' ' : raw.charAt(i);
+    }
+    return out.replace(/ +/g, ' ').trim().slice(0, NAME_MAX);
+  }
+
+  function myName() { return cleanName(settings.playerName) || 'Player'; }
+
+  // Falls back to the colour name so nothing can ever render blank.
+  function nameOf(seat) {
+    if (seat === null || seat === undefined) return '—';
+    return seatNames[seat] || R.SEAT_NAMES[seat] || 'Player';
+  }
+
+  function resetSeatNames() { seatNames = {}; }
+
+
   /* ================= local play =================
    * Every seat lives on this device. A seat is either a person passing the
    * phone along or the computer; `localSeats` says which, indexed by seat.
    */
   var localCount = 2;
   var localSeats = { 0: 'human', 1: 'ai:normal', 2: 'ai:normal', 3: 'ai:normal' };
+  var localNames = {};
   var aiTimer = null;
 
   function seatOrder(n) { return n === 4 ? [R.SOUTH, R.WEST, R.NORTH, R.EAST] : [R.SOUTH, R.NORTH]; }
@@ -192,7 +222,7 @@
     stopClock();
     paintClock();
     var title, sub;
-    var name = function (s) { return s === null || s === undefined ? '—' : R.SEAT_NAMES[s]; };
+    var name = nameOf;
     // seat count comes from the position, not the mode string (hot-seat 4P is 'local')
     var nSeats = state ? state.seats.length : 2;
     if (res.type === 'trident') {
@@ -204,7 +234,10 @@
       sub = 'Threefold repetition — decided on pieces remaining.';
     } else if (res.type === 'resign') {
       title = name(res.winner) + ' wins';
-      sub = 'By resignation.';
+      sub = name(res.quit) + ' resigned.';
+    } else if (res.type === 'left') {
+      title = name(res.winner) + ' wins';
+      sub = name(res.quit) + ' left the game.';
     } else {
       title = name(res.winner) + ' wins';
       sub = name(res.stuck) + ' has no legal moves left.';
@@ -307,7 +340,7 @@
   function applyPass(seat) {
     if (!state || state.result || state.toMove !== seat) return;
     Sound.timeout();
-    sysChat(R.SEAT_NAMES[seat] + ' ran out of time and lost the turn.');
+    sysChat(nameOf(seat) + ' ran out of time and lost the turn.');
     R.passTurn(state, seat);
     board.render(state);
     updatePanel();
@@ -329,7 +362,7 @@
   function updatePanel() {
     if (!state) return;
     var n = R.countPieces(state);
-    var who = R.SEAT_NAMES[state.toMove];
+    var who = nameOf(state.toMove);
     var yours = (mySeat !== null && state.toMove === mySeat);
     var label = state.result ? 'Game over'
       : (mode === 'local' ? who + ' to move' : (yours ? 'Your move' : 'Waiting for ' + who));
@@ -345,7 +378,7 @@
     for (var s = 0; s < state.seats.length; s++) {
       var seat = state.seats[s], dead = !state.alive[seat];
       html += '<div' + (dead ? ' class="out"' : '') + '><b style="color:' + colors[seat] + '">' + n[seat] +
-        '</b><span>' + R.SEAT_NAMES[seat] + (dead ? ' · out' : '') + '</span></div>';
+        '</b><span>' + esc(nameOf(seat)) + (dead ? ' · out' : '') + '</span></div>';
     }
     if (n[R.NEUTRAL]) html += '<div class="out"><b>' + n[R.NEUTRAL] + '</b><span>Abandoned</span></div>';
     $('#tally').innerHTML = html;
@@ -416,7 +449,7 @@
     line.className = 'msg ' + kind;
     if (kind === 'say') {
       var who = document.createElement('b');
-      who.textContent = (R.SEAT_NAMES[seat] || 'Someone') + ':';
+      who.textContent = nameOf(seat) + ':';
       if (colors[seat]) who.style.color = colors[seat];
       line.appendChild(who);
       line.appendChild(document.createTextNode(' ' + text));   // text, never markup
@@ -463,6 +496,14 @@
     el.className = 'status' + (kind ? ' ' + kind : '');
   }
 
+  // The first chair is you; the rest are numbered so a pass-and-play table
+  // does not end up with four people all called Player.
+  function defaultSeatName(seat, order) {
+    var at = order.indexOf(seat);
+    if (at === 0) return myName();
+    return 'Player ' + (at + 1);
+  }
+
   function buildSeatList() {
     var host = $('#seatList');
     host.innerHTML = '';
@@ -476,10 +517,20 @@
         '<option value="ai:hard">Computer · Hard</option>';
       row.innerHTML = '<span class="dotc" style="background:' + DEFAULT_COLORS[seat] + '"></span>' +
         '<span class="who">' + R.SEAT_NAMES[seat] + '</span>' +
+        '<input type="text" class="seatname" maxlength="16" data-seat="' + seat + '">' +
         '<select data-seat="' + seat + '">' + opts + '</select>';
       var sel = row.querySelector('select');
+      var nameBox = row.querySelector('.seatname');
       sel.value = localSeats[seat];
-      sel.onchange = function () { localSeats[seat] = sel.value; };
+      nameBox.value = localNames[seat] || defaultSeatName(seat, order);
+      nameBox.placeholder = 'Player';
+      nameBox.oninput = function () { localNames[seat] = cleanName(nameBox.value); };
+      function syncRow() {
+        var human = sel.value === 'human';
+        nameBox.style.visibility = human ? '' : 'hidden';
+      }
+      sel.onchange = function () { localSeats[seat] = sel.value; syncRow(); };
+      syncRow();
       host.appendChild(row);
     });
     $('#localSeats2').classList.toggle('on', localCount === 2);
@@ -525,6 +576,8 @@
 
   function startAsHost(m, opts) {
     mode = m; isHost = true; seatOf = new Map();
+    resetSeatNames();
+    seatNames[R.SOUTH] = myName();
     var seed = Net.randomSeed();
     gameOpts = { size: 11, seats: seatsFor(m), seed: seed, layouts: opts && opts.layouts,
                  turnSecs: settings.turnSecs };
@@ -543,7 +596,7 @@
     seatOf.set(conn, seat);
     conn.send({
       t: 'init', v: 2, mode: mode, seed: gameOpts.seed, seats: seatsFor(mode),
-      yourSeat: seat, colors: colors, turnSecs: gameOpts.turnSecs,
+      yourSeat: seat, colors: colors, turnSecs: gameOpts.turnSecs, names: seatNames,
       layouts: gameOpts.layouts ? encodeLayouts(gameOpts.layouts) : null
     });
     var need = seatsFor(mode) === 4 ? 3 : 1, total = seatsFor(mode);
@@ -551,7 +604,7 @@
       s.broadcast({ t: 'start' });
       revealBoard();
       sysChat('Everyone is here — game on.');
-      status('Everyone is here. You are ' + R.SEAT_NAMES[R.SOUTH] + ' and move first.', 'good');
+      status('Everyone is here. You are ' + nameOf(R.SOUTH) + ' and move first.', 'good');
     } else {
       s.broadcast({ t: 'lobby', have: s.conns.length + 1, need: total });
       waitPanel('Waiting — ' + (s.conns.length + 1) + ' of ' + total + ' players here');
@@ -595,11 +648,11 @@
         if (isHost) {
           var seat = seatOf && seatOf.get(conn);
           if (seat === undefined || state.result) return;
-          R.resignSeat(state, seat);
+          R.resignSeat(state, seat, 'left');
           s.broadcast({ t: 'gone', seat: seat });
           board.render(state); updatePanel();
-          status(R.SEAT_NAMES[seat] + ' disconnected.', 'err');
-          sysChat(R.SEAT_NAMES[seat] + ' disconnected.');
+          status(nameOf(seat) + ' disconnected.', 'err');
+          sysChat(nameOf(seat) + ' disconnected.');
           if (state.result) endGame(state.result);
         } else {
           board.locked = true;
@@ -614,6 +667,16 @@
         mode = 'none';
       }
     };
+  }
+
+  function applyRoster(names) {
+    if (!names) return;
+    for (var k in names) {
+      var seat = parseInt(k, 10);
+      if (isNaN(seat)) continue;
+      var nm = cleanName(names[k]);
+      if (nm) seatNames[seat] = nm;
+    }
   }
 
   function addLeaveButton() {
@@ -631,9 +694,13 @@
       colors = d.colors || DEFAULT_COLORS.slice();
       gameOpts = { size: 11, seats: d.seats, seed: d.seed, layouts: decodeLayouts(d.layouts),
                    turnSecs: d.turnSecs === undefined ? settings.turnSecs : d.turnSecs };
+      resetSeatNames();
+      applyRoster(d.names);
+      seatNames[d.yourSeat] = myName();
+      s.send({ t: 'iam', name: myName() });        // tell the table who just sat down
       newGame(gameOpts, d.yourSeat);
       board.locked = true;
-      waitPanel('You are ' + R.SEAT_NAMES[d.yourSeat] + ' — waiting for the table to fill');
+      waitPanel('You are ' + nameOf(d.yourSeat) + ' — waiting for the table to fill');
       armStartTimeout();
       if (s.matched) s.matched();
       return;
@@ -654,7 +721,7 @@
     if (d.t === 'start' && !isHost) {
       revealBoard();
       sysChat('Everyone is here — game on.');
-      status('Game on. You are ' + R.SEAT_NAMES[mySeat] + '.', 'good');
+      status('Game on. You are ' + nameOf(mySeat) + '.', 'good');
       return;
     }
     if (d.t === 'intent' && isHost) {
@@ -699,6 +766,20 @@
       s.broadcast({ t: 'say', seat: cseat, text: ctext });
       return;
     }
+    if (d.t === 'iam' && isHost) {
+      var iseat = seatOf.get(conn);
+      if (iseat === undefined) return;
+      seatNames[iseat] = cleanName(d.name) || R.SEAT_NAMES[iseat];
+      s.broadcast({ t: 'roster', names: seatNames });
+      updatePanel();
+      return;
+    }
+    if (d.t === 'roster' && !isHost) {
+      applyRoster(d.names);
+      if (mySeat !== null) seatNames[mySeat] = myName();
+      updatePanel();
+      return;
+    }
     if (d.t === 'say') {
       var stext = cleanChat(d.text);
       if (stext) addChat('say', d.seat, stext);
@@ -712,15 +793,15 @@
     if (d.t === 'reject' && !isHost) { busy = false; status('That move was rejected.', 'err'); return; }
     if (d.t === 'gone') {
       if (isHost) return;
-      R.resignSeat(state, d.seat);
+      R.resignSeat(state, d.seat, 'left');
       board.render(state); updatePanel();
-      status(R.SEAT_NAMES[d.seat] + ' left the game.', 'err');
-      sysChat(R.SEAT_NAMES[d.seat] + ' left the game.');
+      status(nameOf(d.seat) + ' left the game.', 'err');
+      sysChat(nameOf(d.seat) + ' left the game.');
       if (state.result) endGame(state.result);
       return;
     }
     if (d.t === 'resign') {
-      R.resignSeat(state, d.seat);
+      R.resignSeat(state, d.seat, 'resign');
       if (isHost) s.broadcast({ t: 'resign', seat: d.seat }, conn);
       board.render(state); updatePanel();
       if (state.result) endGame(state.result);
@@ -831,6 +912,17 @@
       $('#speedVal').textContent = settings.animMs === 0 ? 'off' : settings.animMs + 'ms';
       save();
     };
+    var nameBox = $('#setName');
+    nameBox.value = settings.playerName === 'Player' ? '' : settings.playerName;
+    nameBox.placeholder = 'Player';
+    nameBox.oninput = function () {
+      settings.playerName = cleanName(nameBox.value) || 'Player';
+      save();
+      // if this is your seat right now, the change should show immediately
+      if (state && mySeat !== null) { seatNames[mySeat] = myName(); updatePanel(); }
+      if (mode === 'local') { localNames[seatOrder(localCount)[0]] = ''; }
+    };
+
     var limit = $('#setLimit');
     limit.value = String(settings.turnSecs);
     if (limit.value === '') {            // stored value is not one of the options
@@ -939,6 +1031,12 @@
       // first human seat so the phone is already the right way up.
       var order = seatOrder(n), viewer = order[0];
       for (var i = 0; i < order.length; i++) { if (!isAiSeatCfg(order[i])) { viewer = order[i]; break; } }
+      resetSeatNames();
+      order.forEach(function (seat) {
+        seatNames[seat] = isAiSeatCfg(seat)
+          ? 'Computer'
+          : (cleanName(localNames[seat]) || defaultSeatName(seat, order));
+      });
       newGame({ size: 11, seats: n, seed: Net.randomSeed(), turnSecs: settings.turnSecs }, null);
       board.setPerspective(viewer);
       board.locked = false;
@@ -960,7 +1058,7 @@
       if (!state || state.result) return;
       var seat = mySeat === null ? state.toMove : mySeat;
       if (mode !== 'local') session.broadcast ? session.broadcast({ t: 'resign', seat: seat }) : session.send({ t: 'resign', seat: seat });
-      R.resignSeat(state, seat);
+      R.resignSeat(state, seat, 'resign');
       board.render(state); updatePanel();
       if (state.result) endGame(state.result);
     };

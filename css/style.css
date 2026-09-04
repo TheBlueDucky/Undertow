@@ -446,7 +446,14 @@ th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: u
 }
 .seatrow .dotc { width: 15px; height: 15px; border-radius: 50%; flex: none; }
 .seatrow .who { flex: 1; font-weight: 600; }
-.seatrow select { min-width: 11rem; }
+.seatrow select { min-width: 10rem; }
+.seatrow .seatname {
+  width: 8rem; flex: none; font-size: .88rem; padding: .35rem .5rem;
+}
+@media (max-width: 520px) {
+  .seatrow { flex-wrap: wrap; }
+  .seatrow .seatname { width: 100%; }
+}
 
 /* ---------- custom setup editor ---------- */
 .editrow { display: flex; align-items: center; gap: .35rem; margin-bottom: .45rem; }

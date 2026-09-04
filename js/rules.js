@@ -596,7 +596,10 @@
 
   // Resigning (or dropping out of a four-player game) removes that seat's
   // Trident, which runs the normal elimination path: army goes neutral.
-  function resignSeat(st, seat) {
+  // `reason` is 'resign' or 'left'. Removing the Trident makes updateResult
+  // report a Trident kill, which is true mechanically but wrong to show a
+  // player - nobody pushed anything - so retag the result with what happened.
+  function resignSeat(st, seat, reason) {
     if (st.result) return st;
     var t = findTrident(st, seat);
     if (t >= 0) st.board[t] = 0;
@@ -604,6 +607,10 @@
     eliminate(st);
     if (st.toMove === seat) st.toMove = nextSeat(st, seat);
     updateResult(st, seat);
+    if (st.result && st.result.type === 'trident') {
+      st.result.type = reason === 'left' ? 'left' : 'resign';
+      st.result.quit = seat;
+    }
     return st;
   }
 

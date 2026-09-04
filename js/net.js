@@ -22,7 +22,7 @@
 
   // Bumped when the handshake changes. Old clients must never share a beacon
   // name with new ones - their seat accounting differs and the table deadlocks.
-  var PREFIX = 'undertow-v6-';
+  var PREFIX = 'undertow-v7-';
   var BEACON = { 2: PREFIX + 'NormalMatch', 4: PREFIX + 'NormalMatch4' };
   var ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no I/O/0/1
   var SEEK_TIMEOUT = 5000;

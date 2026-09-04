@@ -383,6 +383,28 @@
     eq('by repetition', st.result.type, 'repetition');
   })();
 
+  /* ---- 7c. resigning and leaving ---------------------------------------- */
+  lines.push('resign');
+  (function () {
+    var st = pos([], kings({ c4: [S, T.SWORD] }));
+    R.resignSeat(st, S, 'resign');
+    ok('resigning ends the game', !!st.result);
+    eq('reported as a resignation, not a Trident kill', st.result.type, 'resign');
+    eq('the other player wins', st.result.winner, No);
+    eq('and it records who quit', st.result.quit, S);
+
+    var st2 = pos([], kings({ c4: [S, T.SWORD] }));
+    R.resignSeat(st2, No, 'left');
+    eq('a disconnect reads as leaving', st2.result.type, 'left');
+    eq('winner is the one still there', st2.result.winner, S);
+
+    // in a four-seat game one player quitting must not end it
+    var st4 = R.createState({ size: 11, seats: 4, seed: 12 });
+    R.resignSeat(st4, R.WEST, 'resign');
+    ok('four-player game continues after one quits', !st4.result);
+    eq('three seats remain', R.aliveSeats(st4).length, 3);
+  })();
+
   /* ---- 8. notation ----------------------------------------------------- */
   lines.push('notation');
   (function () {
